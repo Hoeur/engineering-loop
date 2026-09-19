@@ -2,6 +2,7 @@ import { WorkflowStepKey } from '@engloop/types';
 import { analyzeRepositoryStep, createTasksStep, planStep } from './analyze-and-plan';
 import { createWorktreeStep, fixStep, implementStep } from './implement';
 import { finalReviewStep, retestStep, reviewStep, runTestsStep } from './verify';
+import { uiQaStep } from './ui-qa';
 import { completeStep, preparePullRequestStep } from './finalize';
 import type { StepHandlerMap } from './types';
 
@@ -13,6 +14,7 @@ export const STEP_HANDLERS: StepHandlerMap = {
   [WorkflowStepKey.CREATE_WORKTREE]: createWorktreeStep,
   [WorkflowStepKey.IMPLEMENT]: implementStep,
   [WorkflowStepKey.RUN_TESTS]: runTestsStep,
+  [WorkflowStepKey.UI_QA]: uiQaStep,
   [WorkflowStepKey.REVIEW]: reviewStep,
   [WorkflowStepKey.FIX]: fixStep,
   [WorkflowStepKey.RETEST]: retestStep,

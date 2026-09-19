@@ -75,6 +75,21 @@ export const ENGINEERING_TASK_STEPS: readonly WorkflowStepDefinition[] = Object.
     maxAttempts: 1,
   }),
   step({
+    key: WorkflowStepKey.UI_QA,
+    title: 'UI review',
+    description:
+      'Screenshots are captured and reviewed for layout, responsive and accessibility defects.',
+    kind: 'AGENT',
+    role: AgentRole.UI_REVIEWER,
+    entryStatus: TaskStatus.REVIEWING,
+    requiredPermission: PermissionLevel.LEVEL_1_PLAN,
+    // Optional on purpose: a UI QA failure degrades the run, it does not kill a
+    // task whose code is sound. The failed-step loop below skips optional steps,
+    // so an unreachable app or a missing browser cannot fail the task.
+    optional: true,
+    maxAttempts: 1,
+  }),
+  step({
     key: WorkflowStepKey.REVIEW,
     title: 'Code review',
     description: 'Reviewer inspects the diff against requirements, security and architecture.',
@@ -210,6 +225,24 @@ export const decideEngineeringStep = (state: WorkflowState): WorkflowDecision =>
 
   if (!done(WorkflowStepKey.RUN_TESTS)) {
     return run(WorkflowStepKey.RUN_TESTS, 'Deterministic checks have not run');
+  }
+
+  // UI QA runs once, after the checks are green and before code review, so its
+  // findings reach the reviewer as context rather than as a second verdict — and
+  // so it never screenshots a build that does not compile.
+  //
+  // Both terminal guards are load-bearing. `done` covers the success path;
+  // `failedFinally` covers the failure path, because UI_QA is optional and the
+  // failed-step loop above skips past optional steps rather than failing the
+  // task. Without the second guard a UI QA that exhausted its attempts would
+  // never be "done" and the router would ask for it forever.
+  if (
+    state.uiQaEnabled &&
+    state.testsPassed &&
+    !done(WorkflowStepKey.UI_QA) &&
+    !failedFinally(WorkflowStepKey.UI_QA)
+  ) {
+    return run(WorkflowStepKey.UI_QA, 'Checks pass; reviewing the UI');
   }
 
   // Bounded fix loop — never infinite (spec section 7).

@@ -351,7 +351,168 @@ describe('engineering workflow router', () => {
 
   it('exposes the definition through the registry', () => {
     const definition = getWorkflowDefinition('engineering-task');
-    expect(definition.steps).toHaveLength(12);
+    expect(definition.steps).toHaveLength(13);
     expect(() => getWorkflowDefinition('nope')).toThrow();
+  });
+});
+
+describe('UI QA routing', () => {
+  const throughChecks = (overrides: Partial<WorkflowState> = {}) =>
+    state({
+      completedSteps: [
+        WorkflowStepKey.ANALYZE_REPOSITORY,
+        WorkflowStepKey.PLAN,
+        WorkflowStepKey.CREATE_TASKS,
+        WorkflowStepKey.CREATE_WORKTREE,
+        WorkflowStepKey.IMPLEMENT,
+        WorkflowStepKey.RUN_TESTS,
+      ],
+      testsPassed: true,
+      ...overrides,
+    });
+
+  it('is off by default, so a project that never opted in routes straight to review', () => {
+    const decision = decideEngineeringStep(throughChecks());
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.REVIEW);
+  });
+
+  it('runs UI QA after the checks are green and before code review', () => {
+    const decision = decideEngineeringStep(throughChecks({ uiQaEnabled: true }));
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.UI_QA);
+  });
+
+  it('never screenshots a red build: failing checks go to FIX, not UI QA', () => {
+    const decision = decideEngineeringStep(
+      throughChecks({ uiQaEnabled: true, testsPassed: false }),
+    );
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.FIX);
+  });
+
+  it('runs at most once per run, so it cannot re-enter on a later review cycle', () => {
+    const decision = decideEngineeringStep(
+      throughChecks({
+        uiQaEnabled: true,
+        completedSteps: [
+          WorkflowStepKey.ANALYZE_REPOSITORY,
+          WorkflowStepKey.PLAN,
+          WorkflowStepKey.CREATE_TASKS,
+          WorkflowStepKey.CREATE_WORKTREE,
+          WorkflowStepKey.IMPLEMENT,
+          WorkflowStepKey.RUN_TESTS,
+          WorkflowStepKey.UI_QA,
+        ],
+      }),
+    );
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.REVIEW);
+  });
+
+  it('sends a blocking UI finding back through the bounded fix loop', () => {
+    const decision = decideEngineeringStep(
+      throughChecks({
+        uiQaEnabled: true,
+        completedSteps: [
+          WorkflowStepKey.ANALYZE_REPOSITORY,
+          WorkflowStepKey.PLAN,
+          WorkflowStepKey.CREATE_TASKS,
+          WorkflowStepKey.CREATE_WORKTREE,
+          WorkflowStepKey.IMPLEMENT,
+          WorkflowStepKey.RUN_TESTS,
+          WorkflowStepKey.UI_QA,
+        ],
+        hasBlockingFindings: true,
+      }),
+    );
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.FIX);
+  });
+
+  it('degrades rather than failing the task: a failed UI QA is optional', () => {
+    // PREPARE_PR is the other optional step; both must be skipped by the
+    // failed-step loop so a sound task is not killed by a peripheral failure.
+    const decision = decideEngineeringStep(
+      throughChecks({
+        uiQaEnabled: true,
+        failedSteps: [WorkflowStepKey.UI_QA],
+        completedSteps: [
+          WorkflowStepKey.ANALYZE_REPOSITORY,
+          WorkflowStepKey.PLAN,
+          WorkflowStepKey.CREATE_TASKS,
+          WorkflowStepKey.CREATE_WORKTREE,
+          WorkflowStepKey.IMPLEMENT,
+          WorkflowStepKey.RUN_TESTS,
+        ],
+      }),
+    );
+    expect(decision.type).toBe('RUN_STEP');
+    // Not merely "something else now" — a failed optional step must never be
+    // asked for again, or the router would spin on it forever.
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.REVIEW);
+  });
+
+  it('terminates when UI QA keeps failing', () => {
+    // The regression this file's optional-step guard exists for: UI_QA never
+    // becomes `done`, so only `failedFinally` stops the router re-requesting it.
+    let current = state({ uiQaEnabled: true, failedSteps: [WorkflowStepKey.UI_QA] });
+    let guard = 0;
+
+    for (;;) {
+      const decision = decideEngineeringStep(current);
+      if (decision.type !== 'RUN_STEP') break;
+      expect(guard++, 'workflow did not terminate').toBeLessThan(50);
+      expect(decision.step.key, 'a failed optional step was requested again').not.toBe(
+        WorkflowStepKey.UI_QA,
+      );
+
+      const key = decision.step.key;
+      current = {
+        ...current,
+        completedSteps: [...new Set([...current.completedSteps, key])],
+        ...(key === WorkflowStepKey.RUN_TESTS || key === WorkflowStepKey.RETEST
+          ? { testsPassed: true, verificationPending: false }
+          : {}),
+        ...(key === WorkflowStepKey.REVIEW || key === WorkflowStepKey.FINAL_REVIEW
+          ? { reviewApproved: true, hasBlockingFindings: false }
+          : {}),
+      };
+    }
+  });
+
+  it('terminates: driving the loop with UI QA enabled reaches a non-RUN_STEP decision', () => {
+    // The termination proof, re-run with the new branch active. A UI step that
+    // could re-enter would spin here rather than fail an assertion elsewhere.
+    let current = state({ uiQaEnabled: true, maxReviewCycles: 3, maxAttempts: 3 });
+    let guard = 0;
+    let sawUiQa = false;
+
+    for (;;) {
+      const decision = decideEngineeringStep(current);
+      if (decision.type !== 'RUN_STEP') {
+        expect(['COMPLETE', 'WAIT_FOR_HUMAN', 'FAIL', 'CANCELLED']).toContain(decision.type);
+        break;
+      }
+      expect(guard++, 'workflow did not terminate').toBeLessThan(50);
+
+      const key = decision.step.key;
+      if (key === WorkflowStepKey.UI_QA) sawUiQa = true;
+      current = {
+        ...current,
+        completedSteps: [...new Set([...current.completedSteps, key])],
+        ...(key === WorkflowStepKey.IMPLEMENT || key === WorkflowStepKey.FIX
+          ? { verificationPending: true }
+          : {}),
+        ...(key === WorkflowStepKey.RUN_TESTS || key === WorkflowStepKey.RETEST
+          ? { testsPassed: true, verificationPending: false }
+          : {}),
+        ...(key === WorkflowStepKey.REVIEW || key === WorkflowStepKey.FINAL_REVIEW
+          ? {
+              reviewApproved: true,
+              hasBlockingFindings: false,
+              reviewCycle: current.reviewCycle + 1,
+            }
+          : {}),
+      };
+    }
+
+    // Guards against the test passing vacuously because the step never ran.
+    expect(sawUiQa, 'UI QA never ran, so this proved nothing').toBe(true);
   });
 });

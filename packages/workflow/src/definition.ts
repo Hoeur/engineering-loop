@@ -53,6 +53,13 @@ export interface WorkflowState {
   verificationPending: boolean;
   reviewApproved: boolean;
   hasBlockingFindings: boolean;
+  /**
+   * Whether this project runs UI QA at all. Most repositories have no UI, so
+   * this defaults to false and the step is skipped entirely — the router only
+   * ever sees the resolved boolean, never the project settings it came from,
+   * which is what keeps `decideEngineeringStep` free of IO.
+   */
+  uiQaEnabled: boolean;
   skipPlanning: boolean;
   createPullRequest: boolean;
   permissionLevel: PermissionLevel;
@@ -82,6 +89,7 @@ export const createInitialWorkflowState = (
   verificationPending: false,
   reviewApproved: false,
   hasBlockingFindings: false,
+  uiQaEnabled: false,
   skipPlanning: false,
   createPullRequest: true,
   permissionLevel: PermissionLevel.LEVEL_3_PR,

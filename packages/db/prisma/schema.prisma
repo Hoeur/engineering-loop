@@ -139,6 +139,7 @@ enum WorkflowStepKey {
   CREATE_WORKTREE
   IMPLEMENT
   RUN_TESTS
+  UI_QA
   REVIEW
   FIX
   RETEST

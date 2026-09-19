@@ -8,6 +8,20 @@ import { CYCLE_STEPS, guardDecision, readState, type PersistedWorkflowState } fr
 
 /** A workflow run loaded with its step rows — what every engine method works on. */
 type LoadedRun = WorkflowRun & { steps: WorkflowStep[] };
+
+/**
+ * Reads `Project.settings.uiQa.enabled`.
+ *
+ * `settings` is an unvalidated JSON column, so every shape that is not an
+ * explicit `true` means off. Most repositories have no UI, and a project that
+ * never opted in must not pay for a UI review.
+ */
+const isUiQaEnabled = (settings: Prisma.JsonValue | null | undefined): boolean => {
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return false;
+  const uiQa = (settings as Record<string, unknown>).uiQa;
+  if (typeof uiQa !== 'object' || uiQa === null || Array.isArray(uiQa)) return false;
+  return (uiQa as Record<string, unknown>).enabled === true;
+};
 const STEP_LEASE_MS = 20_000;
 const STEP_HEARTBEAT_MS = 5_000;
 
@@ -85,7 +99,13 @@ export class WorkflowEngine {
       include: {
         repository: true,
         project: {
-          select: { id: true, organizationId: true, maxReviewCycles: true, permissionLevel: true },
+          select: {
+            id: true,
+            organizationId: true,
+            maxReviewCycles: true,
+            permissionLevel: true,
+            settings: true,
+          },
         },
       },
     });
@@ -121,6 +141,9 @@ export class WorkflowEngine {
       maxReviewCycles: task.project.maxReviewCycles,
       maxAttempts: task.maxAttempts,
       permissionLevel: task.project.permissionLevel,
+      // Resolved here, in the engine, so the router keeps seeing a plain boolean
+      // and stays a pure function of its state.
+      uiQaEnabled: isUiQaEnabled(task.project.settings),
     };
 
     const definition = getWorkflowDefinition(run.definitionKey);

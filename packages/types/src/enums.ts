@@ -148,6 +148,7 @@ export const WorkflowStepKey = asConst({
   CREATE_WORKTREE: 'CREATE_WORKTREE',
   IMPLEMENT: 'IMPLEMENT',
   RUN_TESTS: 'RUN_TESTS',
+  UI_QA: 'UI_QA',
   REVIEW: 'REVIEW',
   FIX: 'FIX',
   RETEST: 'RETEST',
