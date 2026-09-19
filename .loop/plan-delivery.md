@@ -103,6 +103,65 @@ Task 02 should be re-planned against that port rather than deciding independentl
 
 ---
 
+---
+
+## Feature tier — F1–F7 (new user-facing features)
+
+**Source:** "EngLoop New Feature TODO Roadmap" · **Added:** 2026-09-19
+
+These are user-facing features, distinct from the P0–P6 infrastructure phases.
+**None is startable today** — each depends on phases that have not begun, and P0
+itself is not closed.
+
+| Feature | Stated deps | Dep status | Schema gap |
+| --- | --- | --- | --- |
+| F1 Action Inbox | P3, P5 | neither started | `Task` human assignee, snooze |
+| F2 GitHub Issue Intake | P2, P5 | neither started | `ExternalIssue`, `ExternalIssueComment` |
+| F3 PR Feedback & Merge Queue | F2, P2, P5 | blocked twice | external findings, merge queue |
+| F4 Workflow Template Studio | P4, P5 | neither started | `WorkflowTemplateVersion` |
+| F5 Repository Intelligence | P2, **P8** | **P8 undefined** | `RepositorySnapshot` |
+| F6 Agent Evaluation Lab | P2, **P7, P8** | **P7/P8 undefined** | benchmark suites/cases/runs |
+| F7 Cross-Repository Change Sets | P4, **P10** | **P10 undefined** | `ChangeSet` |
+
+### P7, P8 and P10 are undefined
+
+The feature roadmap's summary refers to "P0–P12", but `docs/next-plan.md` defines
+only **P0–P6**. F5, F6 and F7 depend on P7, P8 and P10, for which no document
+exists in this repository. Those dependencies are **unverifiable**, and are
+recorded as unknown rather than guessed at. Do not infer them from
+`docs/roadmap.md`.
+
+### Verified against the code
+
+- **F1's six sources all exist**: `Approval`, `Task.NEEDS_HUMAN_REVIEW`,
+  `WorkflowRun`, `ReviewFinding`, `CostRecord`, `TaskComment`. So does its tenant
+  scoping — `ownedApprovalWhere`, `ownedFindingWhere`, `ownedWorkflowRunWhere`.
+  Its one real gap: **`Task` has no human assignee** (`assignedAgentId` is an
+  `Agent`), which claim/reassign/assigned-follow-ups all require.
+- **F2/F3**: `WebhookEvent` and `PullRequest` exist, but `PullRequest.local`
+  defaults `true` with `url: null` — **no real pull request has ever been
+  opened.** F3's merge queue presumes the live GitHub pipeline P2 must build first.
+- **F4/F5/F6/F7**: none of `WorkflowTemplateVersion`, `RepositorySnapshot` or
+  `ChangeSet` exists.
+
+### F4 carries a specific risk worth naming now
+
+F4 compiles user-authored templates into `decideEngineeringStep`, today a pure
+function guarded by a termination test. Task 01 is the cautionary precedent:
+adding **one** optional step introduced an infinite loop that only the termination
+test caught. Compiling arbitrary user templates into that function is a much
+larger version of the same risk, and F4's acceptance criteria are right to demand
+the same termination tests.
+
+### Specced ahead
+
+- `.loop/F1-action-inbox/` — spec + plan written 2026-09-19. Includes a
+  **pre-P3/P5 slice** question: a polled, read-only inbox with filtering and deep
+  links is deliverable before either dependency, giving up claim/reassign and live
+  updates. Open for a decision.
+
+---
+
 ## Progress
 
 - [ ] P0 — 2 criteria open (build re-run, six-viewport pass)
@@ -112,6 +171,13 @@ Task 02 should be re-planned against that port rather than deciding independentl
 - [ ] P4 — durable and parallel orchestration
 - [ ] P5 — production auth, authz, notifications
 - [ ] P6 — quality gates and prompt-injection defence
+- [ ] F1 — Action Inbox (**specced**, blocked on P3/P5)
+- [ ] F2 — GitHub Issue Intake (blocked on P2/P5)
+- [ ] F3 — PR Feedback & Merge Queue (blocked on F2/P2/P5)
+- [ ] F4 — Workflow Template Studio (blocked on P4/P5)
+- [ ] F5 — Repository Intelligence (blocked on P2/**P8 undefined**)
+- [ ] F6 — Agent Evaluation Lab (blocked on P2/**P7, P8 undefined**)
+- [ ] F7 — Cross-Repository Change Sets (blocked on P4/**P10 undefined**)
 
 **Carry-forward notes**
 
