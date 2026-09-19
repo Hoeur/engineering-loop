@@ -14,6 +14,7 @@ import { AgentProvidersModule } from './modules/agent-providers/agent-providers.
 import { AgentRunsModule } from './modules/agent-runs/agent-runs.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
+import { InboxModule } from './modules/inbox/inbox.module';
 import { ArtifactsModule } from './modules/artifacts/artifacts.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthGuard } from './modules/auth/auth.guard';
@@ -74,6 +75,7 @@ import { WorkflowsModule } from './modules/workflows/workflows.module';
     UsageModule,
     CostModule,
     ApprovalsModule,
+    InboxModule,
     WebhooksModule,
     DashboardModule,
     HealthModule,

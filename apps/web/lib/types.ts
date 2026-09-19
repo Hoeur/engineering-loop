@@ -541,3 +541,20 @@ export interface Paginated<T> {
   items: T[];
   meta: { pagination?: { page: number; pageSize: number; total: number; totalPages: number } };
 }
+
+/**
+ * One decision awaiting a person, derived from the record that owns the state.
+ * Mirrors `inboxItemSchema` in `@engloop/schemas`.
+ */
+export interface InboxItem {
+  type: 'APPROVAL' | 'HUMAN_REVIEW' | 'WORKFLOW_FAILURE' | 'BLOCKING_FINDING';
+  sourceId: string;
+  projectId: string;
+  projectName: string;
+  severity: Severity;
+  title: string;
+  detail: string | null;
+  taskKey: string | null;
+  firstSeenAt: string;
+  deepLink: string;
+}

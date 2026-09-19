@@ -24,6 +24,7 @@ import type {
   DeliveryMetrics,
   GitHubInstallationSummary,
   GitHubRepositoryCandidate,
+  InboxItem,
   NotificationSummary,
   Paginated,
   ProjectSummary,
@@ -63,6 +64,7 @@ export const queryKeys = {
   testRuns: (params?: unknown) => ['test-runs', params ?? {}] as const,
   reviewRuns: (params?: unknown) => ['review-runs', params ?? {}] as const,
   findings: (params?: unknown) => ['review-findings', params ?? {}] as const,
+  inbox: (params?: unknown) => ['inbox', params ?? {}] as const,
   schedules: (projectId?: string) => ['schedules', projectId ?? 'all'] as const,
   pullRequests: (params?: unknown) => ['pull-requests', params ?? {}] as const,
   worktrees: ['worktrees'] as const,
@@ -397,6 +399,18 @@ export const useFindings = (params?: { projectId?: string; status?: string; seve
     queryKey: queryKeys.findings(params),
     queryFn: () =>
       unwrap(api.get<Paginated<ReviewFindingSummary>>('/review-findings', { query: params })),
+  });
+
+/**
+ * The action inbox. Polled rather than streamed: the live-event work (P3) has
+ * not landed, and TanStack Query stays the canonical server-state cache when it
+ * does.
+ */
+export const useInbox = (params?: { projectId?: string; type?: string; severity?: string }) =>
+  useQuery({
+    queryKey: queryKeys.inbox(params),
+    queryFn: () => unwrap(api.get<{ items: InboxItem[] }>('/inbox', { query: params })),
+    refetchInterval: 20_000,
   });
 
 export const useUpdateFinding = () => {

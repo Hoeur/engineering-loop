@@ -17,6 +17,7 @@ import {
   zRepositoryProvider,
   zRiskLevel,
   zScheduleType,
+  zSeverity,
   zTaskDependencyType,
   zTaskStatus,
   zTaskType,
@@ -406,3 +407,49 @@ export const loginSchema = z.object({
 export const notificationQuerySchema = paginationQuerySchema.extend({
   unreadOnly: z.coerce.boolean().default(false),
 });
+
+// ---------------------------------------------------------------------------
+// Action inbox
+// ---------------------------------------------------------------------------
+
+/**
+ * The kinds of decision that can await a person.
+ *
+ * Full F1 adds MENTION and BUDGET_ALERT; both need work that has not landed
+ * (P5 membership validation, and a product decision on what spend is alertable),
+ * so the read-only slice aggregates these four.
+ */
+export const inboxItemType = {
+  APPROVAL: 'APPROVAL',
+  HUMAN_REVIEW: 'HUMAN_REVIEW',
+  WORKFLOW_FAILURE: 'WORKFLOW_FAILURE',
+  BLOCKING_FINDING: 'BLOCKING_FINDING',
+} as const;
+export type InboxItemType = (typeof inboxItemType)[keyof typeof inboxItemType];
+
+export const inboxItemSchema = z.object({
+  type: z.nativeEnum(inboxItemType),
+  /** Id of the underlying record. Items are keyed by (type, sourceId). */
+  sourceId: cuidLike,
+  projectId: cuidLike,
+  projectName: z.string(),
+  severity: zSeverity,
+  title: z.string(),
+  detail: z.string().nullable().default(null),
+  taskKey: z.string().nullable().default(null),
+  /**
+   * The SOURCE record's own timestamp — never the query time, so an item's age
+   * does not reset the first time the inbox is opened.
+   */
+  firstSeenAt: z.string(),
+  /** Path to the record this item was derived from. */
+  deepLink: z.string(),
+});
+export type InboxItem = z.infer<typeof inboxItemSchema>;
+
+export const listInboxQuerySchema = z.object({
+  projectId: cuidLike.optional(),
+  type: z.nativeEnum(inboxItemType).optional(),
+  severity: zSeverity.optional(),
+});
+export type ListInboxQuery = z.infer<typeof listInboxQuerySchema>;

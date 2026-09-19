@@ -11,6 +11,7 @@ import {
   FlaskConical,
   GitPullRequest,
   Gauge,
+  Inbox,
   LayoutDashboard,
   ListChecks,
   Map as MapIcon,
@@ -43,6 +44,7 @@ export const NAVIGATION: NavSection[] = [
     label: null,
     items: [
       { label: 'Overview', href: '/', icon: LayoutDashboard },
+      { label: 'Inbox', href: '/inbox', icon: Inbox },
       { label: 'Projects', href: '/projects', icon: Boxes },
     ],
   },

@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
  */
 const ROUTES = [
   '/',
+  '/inbox',
   '/projects',
   '/engineering/tasks',
   '/engineering/agent-runs',
