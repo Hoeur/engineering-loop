@@ -29,3 +29,4 @@ Claude outputs/
 .gitignore-probe-DELETE-ME
 apps/web/test-results/
 apps/web/playwright-report/
+.env.bak-p0

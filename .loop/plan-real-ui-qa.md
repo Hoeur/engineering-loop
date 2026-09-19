@@ -1,6 +1,16 @@
 # Plan — Real UI QA (roadmap #4)
 
-**Status:** planned, not started
+> **SUPERSEDED as the active index — 2026-09-19.** `docs/next-plan.md` reschedules
+> this feature to **P3**, behind P0 (evidence baseline), P1 (sandboxed execution)
+> and P2 (live provider/GitHub delivery). The active index is
+> **`.loop/plan-delivery.md`**; start there.
+>
+> This plan is *not* cancelled and its task specs stay valid. Task 01 shipped at
+> `94a1b76`. Tasks 02–04 remain open as P3 work — but **re-plan task 02 against
+> P1's execution-runtime port**, which answers its open question about where
+> Playwright runs.
+
+**Status:** task 01 done (`94a1b76`); tasks 02–04 deferred to P3
 **Created:** 2026-09-19 · **Re-surveyed:** 2026-09-19 after the tenant-isolation change
 **Source:** `docs/roadmap.md` item 4 — "Drive Playwright against the running app,
 capture the three viewport screenshots, collect console and network errors, feed
