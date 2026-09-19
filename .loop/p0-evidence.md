@@ -162,7 +162,82 @@ after the restart request it stopped listening on port 4000 and had not returned
 after 3 minutes of polling. The six-viewport re-run needs it, because the failing
 tests are exactly the ones that call the API.
 
-**To finish P0:** bring the API up on port 4000, then run
+### Update — API restarted, suite re-run, one real defect found
+
+The API was brought up (`pnpm dev:api`) and confirmed serving with the dev
+bypass active: `GET /api/tasks` → **200**, with a resolved `actorId` and
+`organizationId` in the request log.
+
+**Re-run result: 87 passed · 6 failed · 3 skipped** (with `--retries=2`).
+
+That is up from 80 passed, and the 13 auth-gated failures are down to 6 — but
+the remaining 6 are **one test failing at all six viewports, surviving two
+retries**. Deterministic, not flaky.
+
+#### The catch-22 in E2E authentication — root-caused
+
+`apps/api/src/modules/auth/auth.guard.ts:25-31`:
+
+```ts
+if (header?.startsWith('Bearer ')) {
+  request.user = await this.auth.verifyToken(...);   // JWT verify — fails on a fake token
+} else {
+  const devUser = await this.auth.resolveDevUser();  // the bypass lives ONLY here
+  if (!devUser) throw AppError.unauthorized();
+}
+```
+
+The dev bypass applies **only when no `Authorization` header is sent**. Proven
+directly:
+
+```
+curl localhost:4000/api/tasks                                   → 200
+curl -H "Authorization: Bearer e2e-session" localhost:4000/api/tasks → 401
+```
+
+So the suite is caught between two requirements:
+
+- `AuthGate` (`apps/web/components/auth/auth-gate.tsx`) redirects to `/login`
+  unless `localStorage['engloop.auth.token']` is **truthy**.
+- `api-client.ts:71` forwards that token as `Bearer`, and any token the API
+  cannot verify produces a 401 → `notifyUnauthorized()` → token cleared →
+  `/login`.
+
+A probe test confirmed both horns: **with** a fake token the API 401s; **without**
+a token `AuthGate` blocks at the gate. `AUTH_DEV_BYPASS=true` alone cannot fix
+this.
+
+Real credentials were not obtainable: the seeded demo password
+(`engloop-dev-password`) is rejected, because this database was created with
+`bootstrap:real` using credentials only the operator holds. No passwordless
+dev-token endpoint exists — `/api/auth/login` is the only public auth route.
+
+#### Options — operator decision
+
+1. **A `storageState` fixture.** Log in once with real `bootstrap:real`
+   credentials, save the JWT, and have Playwright reuse it. Faithful to the real
+   auth path and survives P5's removal of `AUTH_DEV_BYPASS`. Needs the operator's
+   password, supplied as an environment variable — not committed.
+2. **Re-seed a known dev user.** `pnpm db:seed` creates
+   `founder@evalley.dev / engloop-dev-password`, which the suite could log in as.
+   Changes database contents, so it is the operator's call.
+3. **Let the bypass cover a sentinel token.** Have the guard treat one
+   configured dev token as the bypass path. This is an app change that weakens an
+   auth boundary for test convenience, and it directly contradicts P5's criterion
+   that the bypass "cannot be enabled accidentally". Recorded for completeness;
+   **not recommended**.
+
+#### Everything else now passes
+
+The other 12 previously-failing tests pass with the bypass: the sidebar collapse,
+the mobile navigation drawer, and every authenticated-shell overflow assertion.
+The `/insights/costs` and `states.spec.ts` flakiness did not recur under
+`--retries=2`.
+
+**Horizontal overflow at 375px now passes against the real authenticated shell**,
+not just the login page — which closes the gap flagged in §3.
+
+**To re-run once authentication is settled:**
 
 ```bash
 cd apps/web
