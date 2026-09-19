@@ -37,8 +37,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      # Version comes from packageManager in package.json; setting it here too
+      # fails the action with "Multiple versions of pnpm specified".
       - uses: pnpm/action-setup@v4
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
 
