@@ -285,9 +285,15 @@ export class AgentExecutor {
         input: input.input,
         traceId: input.traceId,
         workflowRunId: input.workflowRunId,
-        ...(resolution.agentTimeoutMs
-          ? { budgetOverrides: { timeoutMs: resolution.agentTimeoutMs } }
-          : {}),
+        // Every limit the resolved agent row sets overrides the env-wide default;
+        // an unset one falls through to it.
+        budgetOverrides: {
+          ...(resolution.agentTimeoutMs ? { timeoutMs: resolution.agentTimeoutMs } : {}),
+          ...(resolution.agentMaxTokens ? { maxTokens: resolution.agentMaxTokens } : {}),
+          ...(resolution.agentMaxCostUsd !== undefined
+            ? { maxCostUsd: resolution.agentMaxCostUsd }
+            : {}),
+        },
       });
 
       if (await cancellationRequested()) {

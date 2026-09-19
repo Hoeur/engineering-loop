@@ -303,6 +303,75 @@ describe('AgentExecutor', () => {
     }));
   });
 
+  it("applies the resolved agent's token and cost limits, not only its timeout", async () => {
+    // Regression: budgetOverrides once carried timeoutMs alone, so an agent row's
+    // maxTokens/maxCostUsd were stored and displayed but never enforced.
+    const build = vi.fn().mockResolvedValue({});
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ status: TaskStatus.CANCELLED }]),
+      $transaction: vi.fn(),
+      task: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: 'task-1', key: 'ENG-1', projectId: 'project-1',
+          project: { organizationId: 'org-1' },
+        }),
+        findUnique: vi.fn().mockResolvedValue({ status: TaskStatus.CANCELLED }),
+      },
+      agentProvider: { findFirst: vi.fn().mockResolvedValue({ id: 'provider-1' }) },
+      agent: { findFirst: vi.fn().mockResolvedValue({ id: 'agent-1' }) },
+      agentRun: {
+        create: vi.fn().mockResolvedValue({
+          id: 'agent-1', status: AgentRunStatus.RUNNING, errorMessage: null,
+        }),
+        findUnique: vi.fn().mockResolvedValue({ status: AgentRunStatus.RUNNING }),
+        updateMany,
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: 'agent-1', status: AgentRunStatus.CANCELLED,
+          errorMessage: 'cancelled', estimatedCost: 0,
+        }),
+      },
+    };
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma),
+    );
+
+    const executor = new AgentExecutor({
+      prisma,
+      registry: { resolve: vi.fn().mockReturnValue({
+        key: 'mock', capabilities: { models: [] }, startRun: vi.fn(),
+      }) },
+      logger: { withContext: vi.fn().mockReturnValue({ info: vi.fn(), error: vi.fn() }) },
+      env: {},
+      audit: { record: vi.fn() },
+      usage: { budgetExceeded: vi.fn().mockResolvedValue({ exceeded: false, spent: 0, limit: 5 }) },
+      credentials: { resolve: vi.fn().mockResolvedValue(undefined) },
+      credentialStore: { set: vi.fn(), clear: vi.fn(), env: vi.fn().mockReturnValue({}) },
+      contextBuilder: {
+        resolveRoleProvider: vi.fn().mockResolvedValue({
+          providerKey: 'mock',
+          agentId: 'agent-1',
+          model: null,
+          agentTimeoutMs: 60_000,
+          agentMaxTokens: 50_000,
+          agentMaxCostUsd: 2.5,
+        }),
+        build,
+      },
+    } as never);
+
+    await executor.execute({
+      taskId: 'task-1', role: AgentRole.IMPLEMENTER, input: {},
+      workspacePath: 'C:\\worktree', traceId: 'trace-1',
+    });
+
+    expect(build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        budgetOverrides: { timeoutMs: 60_000, maxTokens: 50_000, maxCostUsd: 2.5 },
+      }),
+    );
+  });
+
   it('does not start or audit an agent when cancellation wins the creation lock', async () => {
     const startRun = vi.fn();
     const recordAudit = vi.fn();

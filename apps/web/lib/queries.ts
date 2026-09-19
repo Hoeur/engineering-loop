@@ -37,6 +37,7 @@ import type {
   TaskDetail,
   TaskSummary,
   TestRunSummary,
+  UpdateAgentInput,
   UpsertProviderInput,
   UsageSummary,
   WorkflowRunDetail,
@@ -304,6 +305,24 @@ export const useAgents = (params?: { projectId?: string; role?: string }) =>
     queryKey: queryKeys.agents(params),
     queryFn: () => unwrap(api.get<{ items: AgentSummary[] }>('/agents', { query: params })),
   });
+
+/**
+ * Updates one agent's execution limits.
+ *
+ * These are what actually bound a run: the worker resolves the agent row's
+ * maxTokens/maxCostUsd/timeoutMs and falls back to the process-wide defaults
+ * only for an agent that sets none.
+ */
+export const useUpdateAgent = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateAgentInput & { id: string }) =>
+      unwrap(api.patch<AgentSummary>(`/agents/${id}`, body)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['agents'] });
+    },
+  });
+};
 
 export const useAgentTeam = (projectId?: string) =>
   useQuery({

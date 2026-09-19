@@ -130,6 +130,14 @@ export interface AgentProviderSummary {
   _count?: { agents: number; agentRuns: number };
 }
 
+/** Partial update of an agent's execution limits (PATCH /agents/:id). */
+export interface UpdateAgentInput {
+  maxTokens?: number;
+  maxCostUsd?: number;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
 export interface CurrentUser {
   id: string;
   email: string;
