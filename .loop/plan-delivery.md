@@ -171,7 +171,7 @@ the same termination tests.
 - [ ] P4 — durable and parallel orchestration
 - [ ] P5 — production auth, authz, notifications
 - [ ] P6 — quality gates and prompt-injection defence
-- [ ] F1 — Action Inbox (**specced**, blocked on P3/P5)
+- [~] F1 — Action Inbox: **read-only slice shipped** (`3690191`); claim/reassign/snooze/mentions/streaming still blocked on P3/P5
 - [ ] F2 — GitHub Issue Intake (blocked on P2/P5)
 - [ ] F3 — PR Feedback & Merge Queue (blocked on F2/P2/P5)
 - [ ] F4 — Workflow Template Studio (blocked on P4/P5)
