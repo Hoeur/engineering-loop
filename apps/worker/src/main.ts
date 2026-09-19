@@ -91,7 +91,9 @@ async function bootstrap(): Promise<void> {
       providers: Object.fromEntries(
         Object.entries(providerHealth).map(([key, value]) => [key, value.healthy]),
       ),
-      providerAuth: worker.providerAuth,
+      // Credentials are resolved per run from each organization's stored key,
+      // so there is no process-wide auth source to report here.
+      credentialSource: 'database-per-organization',
     },
     'worker.started',
   );

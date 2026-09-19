@@ -6,6 +6,10 @@ import type { Prisma } from '@engloop/db';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppError } from '../../common/errors/app-error';
 import { AuditService } from '../audit/audit.service';
+import { SecretsService } from '../../infrastructure/crypto/secrets.service';
+
+/** How a provider authenticates at run time, as reported to the UI. */
+type CredentialSource = 'none' | 'database' | 'cli-login';
 
 /**
  * Provider registry management.
@@ -19,6 +23,7 @@ export class AgentProvidersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly secrets: SecretsService,
   ) {}
 
   private assertAdministrator(role: string): void {
@@ -35,14 +40,12 @@ export class AgentProvidersService {
     });
 
     const items = providers.map((provider) => ({
-      ...provider,
-      encryptedCredential: undefined,
-      credentialIv: undefined,
-      credentialAuthTag: undefined,
+      ...this.withoutCredential(provider),
       hasCredential: Boolean(provider.encryptedCredential),
-      requiresCredential: false,
-      credentialSource:
-        provider.kind === AgentProviderKind.MOCK ? 'none' : 'worker-process-environment',
+      // Only real CLI providers can carry a key; a run without one falls back to
+      // the CLI's own login rather than failing.
+      requiresCredential: provider.kind !== AgentProviderKind.MOCK,
+      credentialSource: AgentProvidersService.credentialSource(provider),
     }));
 
     return { items, meta: { catalogue: MODEL_PRICING } };
@@ -50,12 +53,29 @@ export class AgentProvidersService {
 
   async upsert(organizationId: string, role: string, dto: UpsertAgentProviderDto) {
     this.assertAdministrator(role);
-    if (dto.credential) {
+
+    if (dto.credential && dto.kind === AgentProviderKind.MOCK) {
       throw AppError.badRequest(
         'PROVIDER_CREDENTIAL_UNSUPPORTED',
-        'Provider credentials must be configured in the worker process environment',
+        'The mock provider does not authenticate and cannot store a credential',
       );
     }
+
+    // Three states: set a new key, clear the stored one, or leave it alone.
+    // "Leave it alone" must omit the columns entirely so editing an unrelated
+    // field does not wipe a working credential.
+    const credentialColumns = dto.credential
+      ? (() => {
+          const encrypted = this.secrets.encrypt(dto.credential);
+          return {
+            encryptedCredential: encrypted.ciphertext,
+            credentialIv: encrypted.iv,
+            credentialAuthTag: encrypted.authTag,
+          };
+        })()
+      : dto.clearCredential
+        ? { encryptedCredential: null, credentialIv: null, credentialAuthTag: null }
+        : {};
 
     const provider = await this.prisma.agentProvider.upsert({
       where: { organizationId_key: { organizationId, key: dto.key } },
@@ -69,6 +89,7 @@ export class AgentProvidersService {
         availableModels: dto.availableModels,
         configuration: dto.configuration as Prisma.InputJsonValue,
         pricing: (dto.pricing ?? {}) as Prisma.InputJsonValue,
+        ...credentialColumns,
       },
       update: {
         displayName: dto.displayName,
@@ -78,8 +99,11 @@ export class AgentProvidersService {
         availableModels: dto.availableModels,
         configuration: dto.configuration as Prisma.InputJsonValue,
         ...(dto.pricing ? { pricing: dto.pricing as Prisma.InputJsonValue } : {}),
+        ...credentialColumns,
       },
     });
+
+    const credentialChange = dto.credential ? 'set' : dto.clearCredential ? 'cleared' : 'unchanged';
 
     await this.audit.recordSafe({
       organizationId,
@@ -87,16 +111,42 @@ export class AgentProvidersService {
       entityType: 'agent_provider',
       entityId: provider.id,
       summary: `Configured provider ${provider.key}`,
-      metadata: { credentialSource: 'worker-process-environment' },
+      // Records that a credential changed — never the value or its preview.
+      metadata: { credentialChange },
     });
 
     return {
-      ...provider,
-      encryptedCredential: undefined,
-      credentialIv: undefined,
-      credentialAuthTag: undefined,
+      ...this.withoutCredential(provider),
       hasCredential: Boolean(provider.encryptedCredential),
+      requiresCredential: provider.kind !== AgentProviderKind.MOCK,
+      credentialSource: AgentProvidersService.credentialSource(provider),
+      // Shown once so an admin can confirm the key they pasted. Derived from the
+      // submitted plaintext, never by decrypting what is stored.
+      credentialPreview: dto.credential ? this.secrets.redact(dto.credential) : null,
     };
+  }
+
+  /** Strips every ciphertext column from a row before it leaves the API. */
+  private withoutCredential<T extends object>(
+    provider: T,
+  ): Omit<T, 'encryptedCredential' | 'credentialIv' | 'credentialAuthTag'> {
+    const { encryptedCredential, credentialIv, credentialAuthTag, ...safe } = provider as T & {
+      encryptedCredential?: unknown;
+      credentialIv?: unknown;
+      credentialAuthTag?: unknown;
+    };
+    void encryptedCredential;
+    void credentialIv;
+    void credentialAuthTag;
+    return safe;
+  }
+
+  private static credentialSource(provider: {
+    kind: AgentProviderKind;
+    encryptedCredential: string | null;
+  }): CredentialSource {
+    if (provider.kind === AgentProviderKind.MOCK) return 'none';
+    return provider.encryptedCredential ? 'database' : 'cli-login';
   }
 
   /**

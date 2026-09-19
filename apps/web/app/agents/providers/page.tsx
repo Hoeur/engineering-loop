@@ -6,16 +6,39 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from '@engloop/ui';
 import { PageHeader } from '@/components/common/page-header';
 import { EmptyState, QueryBoundary } from '@/components/common/states';
 import { relativeTime, titleCase } from '@/lib/format';
-import { useProviders } from '@/lib/queries';
+import { useCurrentUser, useProviders } from '@/lib/queries';
+import { ProviderCredentialDialog } from '@/components/providers/provider-credential-dialog';
+import type { AgentProviderSummary } from '@/lib/types';
+
+/** Mirrors the API's own gate, which is what actually enforces this. */
+const canManageProviders = (role: string | undefined): boolean =>
+  role === 'OWNER' || role === 'ADMIN';
+
+const CREDENTIAL_LABELS: Record<string, string> = {
+  none: 'Offline provider',
+  database: 'Key configured',
+  'cli-login': 'CLI login',
+};
+
+const credentialBadge = (
+  provider: AgentProviderSummary,
+): { label: string; tone: 'info' | 'warning' | 'neutral' } => {
+  const source = provider.credentialSource ?? (provider.hasCredential ? 'database' : 'cli-login');
+  if (source === 'database') return { label: CREDENTIAL_LABELS.database, tone: 'info' };
+  if (source === 'none') return { label: CREDENTIAL_LABELS.none, tone: 'neutral' };
+  return { label: CREDENTIAL_LABELS['cli-login'], tone: 'warning' };
+};
 
 export default function ProvidersPage(): React.JSX.Element {
   const providers = useProviders();
+  const currentUser = useCurrentUser();
+  const isAdmin = canManageProviders(currentUser.data?.role);
 
   return (
     <>
       <PageHeader
         title="Providers"
-        description="Registered coding-agent providers. Real provider authentication comes from the worker process environment."
+        description="Registered coding-agent providers. API keys are stored encrypted per organization; a provider without one runs on its CLI's own login."
       />
 
       <QueryBoundary
@@ -46,8 +69,8 @@ export default function ProvidersPage(): React.JSX.Element {
                     <Badge tone={provider.healthy ? 'success' : 'danger'}>
                       {provider.healthy ? 'Healthy' : 'Unhealthy'}
                     </Badge>
-                    <Badge tone="info">
-                      {provider.credentialSource === 'none' ? 'Offline provider' : 'Worker auth'}
+                    <Badge tone={credentialBadge(provider).tone}>
+                      {credentialBadge(provider).label}
                     </Badge>
                   </div>
 
@@ -79,6 +102,13 @@ export default function ProvidersPage(): React.JSX.Element {
                       <ShieldAlert className="mt-0.5 h-3 w-3 shrink-0" />
                       {provider.lastHealthDetail}
                     </p>
+                  ) : null}
+
+                  {isAdmin && provider.requiresCredential && currentUser.data ? (
+                    <ProviderCredentialDialog
+                      provider={provider}
+                      organizationId={currentUser.data.organizationId}
+                    />
                   ) : null}
                 </CardContent>
               </Card>

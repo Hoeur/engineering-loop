@@ -11,6 +11,9 @@ import { ROLE_OUTPUT_SCHEMAS, parseSafely, type AgentRunResult } from '@engloop/
 import type { AuditWriter } from './audit-writer';
 import type { UsageRecorder } from './usage-recorder';
 import type { ContextBuilder } from './context-builder';
+import type { CredentialResolver } from './credential-resolver';
+import type { ProviderCredentialStore } from './provider-credential-store';
+import { claudeCodeCliAuth, codexCliAuth, type CliAuth } from '../provider-auth';
 
 export interface ExecuteAgentInput {
   taskId: string;
@@ -41,6 +44,8 @@ interface AgentExecutorDeps {
   audit: AuditWriter;
   usage: UsageRecorder;
   contextBuilder: ContextBuilder;
+  credentials: CredentialResolver;
+  credentialStore: ProviderCredentialStore;
 }
 
 /**
@@ -53,7 +58,7 @@ export class AgentExecutor {
   constructor(private readonly deps: AgentExecutorDeps) {}
 
   async execute(input: ExecuteAgentInput): Promise<ExecuteAgentOutcome> {
-    const { prisma, registry, logger, audit, usage, contextBuilder } = this.deps;
+    const { prisma, registry, logger, audit, usage, contextBuilder, credentialStore } = this.deps;
 
     const task = await prisma.task.findUniqueOrThrow({
       where: { id: input.taskId },
@@ -228,6 +233,8 @@ export class AgentExecutor {
     let failure: { code: string; message: string } | null = null;
     let actualProviderKey = resolution.providerKey;
     let actualModel = resolution.model;
+    /** Set once a credential is primed, so it is cleared on every exit path. */
+    let credentialPrimed: string | null = null;
 
     const cancellationRequested = async (): Promise<boolean> => {
       const current = await prisma.agentRun.findUnique({
@@ -287,7 +294,16 @@ export class AgentExecutor {
         throw new Error('Agent run was cancelled before its provider started');
       }
 
-      runLogger.info({ provider: provider.key, role: input.role }, 'agent.run.started');
+      // Resolve this organization's stored key and prime it for the spawn. The
+      // SDK reads it back synchronously from the store inside `startRun`.
+      const auth = await this.resolveCliAuth(task.project.organizationId, provider.key);
+      credentialStore.set(provider.key, auth);
+      credentialPrimed = provider.key;
+
+      runLogger.info(
+        { provider: provider.key, role: input.role, credentialSource: auth.source },
+        'agent.run.started',
+      );
       let checkingCancellation = false;
       let cancellationSent = false;
       const pollCancellation = async (): Promise<void> => {
@@ -333,6 +349,9 @@ export class AgentExecutor {
         };
       }
       runLogger.error({ ...failure }, 'agent.run.failed');
+    } finally {
+      // A decrypted key must not stay readable once this run has spawned.
+      if (credentialPrimed) credentialStore.clear(credentialPrimed);
     }
 
     const status: AgentRunStatus = failure
@@ -458,6 +477,23 @@ export class AgentExecutor {
       costUsd: Number(persisted.estimatedCost),
       budgetExceeded: false,
     };
+  }
+
+  /**
+   * Turns the organization's stored credential into the environment its CLI needs.
+   *
+   * A provider with no stored key yields `cli-login`, leaving the CLI on its own
+   * `codex login` / `claude` session. Process-environment API keys are not
+   * consulted: credentials come from the UI or not at all.
+   */
+  private async resolveCliAuth(organizationId: string, providerKey: string): Promise<CliAuth> {
+    const { credentials, env } = this.deps;
+    const apiKey = await credentials.resolve(organizationId, providerKey);
+
+    if (providerKey === 'claude-code') return claudeCodeCliAuth(apiKey);
+    if (providerKey === 'codex') return codexCliAuth(apiKey, env.CODEX_HOME);
+    // Providers without CLI credentials (e.g. mock) spawn with no extra env.
+    return { source: apiKey ? 'api-key' : 'cli-login', env: {} };
   }
 
   private async assertWorkflowOwnership(

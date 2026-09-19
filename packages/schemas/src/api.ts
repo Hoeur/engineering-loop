@@ -87,6 +87,7 @@ export const repositoryCredentialSchema = z.object({
   kind: z.string().min(1).max(60),
   value: z.string().min(1).max(8000),
 });
+export type RepositoryCredentialDto = z.infer<typeof repositoryCredentialSchema>;
 
 const githubNumericId = z.string().regex(/^\d+$/, 'GitHub id must contain only digits');
 
@@ -251,25 +252,36 @@ export type UpsertAgentDto = z.infer<typeof upsertAgentSchema>;
 
 export const updateAgentSchema = upsertAgentSchema.partial().omit({ organizationId: true });
 
-export const upsertAgentProviderSchema = z.object({
-  organizationId: cuidLike,
-  key: z.string().min(2).max(60),
-  displayName: z.string().min(2).max(80),
-  kind: zAgentProviderKind,
-  enabled: z.boolean().default(true),
-  defaultModel: z.string().max(120).optional(),
-  availableModels: z.array(z.string().max(120)).default([]),
-  /** Never returned by the API — encrypted at rest, redacted on read. */
-  credential: z.string().max(8000).optional(),
-  configuration: z.record(z.unknown()).default({}),
-  pricing: z
-    .object({
-      inputPerMillionUsd: z.number().nonnegative(),
-      outputPerMillionUsd: z.number().nonnegative(),
-      cachedPerMillionUsd: z.number().nonnegative().default(0),
-    })
-    .optional(),
-});
+export const upsertAgentProviderSchema = z
+  .object({
+    organizationId: cuidLike,
+    key: z.string().min(2).max(60),
+    displayName: z.string().min(2).max(80),
+    kind: zAgentProviderKind,
+    enabled: z.boolean().default(true),
+    defaultModel: z.string().max(120).optional(),
+    availableModels: z.array(z.string().max(120)).default([]),
+    /**
+     * Provider API key. Never returned by the API — encrypted at rest and only
+     * ever echoed back as a redacted preview. Omit to leave a stored key
+     * untouched; use `clearCredential` to remove one.
+     */
+    credential: z.string().min(1).max(8000).optional(),
+    /** Removes the stored key, so the provider falls back to its CLI login. */
+    clearCredential: z.boolean().default(false),
+    configuration: z.record(z.unknown()).default({}),
+    pricing: z
+      .object({
+        inputPerMillionUsd: z.number().nonnegative(),
+        outputPerMillionUsd: z.number().nonnegative(),
+        cachedPerMillionUsd: z.number().nonnegative().default(0),
+      })
+      .optional(),
+  })
+  .refine((value) => !(value.credential && value.clearCredential), {
+    message: 'Provide either credential or clearCredential, not both',
+    path: ['credential'],
+  });
 export type UpsertAgentProviderDto = z.infer<typeof upsertAgentProviderSchema>;
 
 export const roleAssignmentSchema = z.object({

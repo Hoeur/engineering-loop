@@ -120,9 +120,36 @@ export interface AgentProviderSummary {
   lastHealthDetail: string | null;
   hasCredential: boolean;
   requiresCredential?: boolean;
-  credentialSource?: 'none' | 'worker-process-environment';
+  /**
+   * How the provider authenticates at run time: `database` uses the key stored
+   * from this UI, `cli-login` falls back to the CLI's own session, and `none`
+   * is a provider that never authenticates.
+   */
+  credentialSource?: 'none' | 'database' | 'cli-login';
   pricing?: Record<string, number>;
   _count?: { agents: number; agentRuns: number };
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  name: string;
+  organizationId: string;
+  role: string;
+}
+
+export interface UpsertProviderInput {
+  organizationId: string;
+  key: string;
+  displayName: string;
+  kind: string;
+  enabled: boolean;
+  defaultModel?: string;
+  availableModels: string[];
+  /** Sent only when the admin typed a new key; omitted leaves the stored one. */
+  credential?: string;
+  clearCredential?: boolean;
+  configuration: Record<string, unknown>;
 }
 
 export interface TaskSummary {
