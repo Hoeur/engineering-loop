@@ -152,8 +152,8 @@ already models · auto-fixing UI findings.
 
 ## Progress
 
-- [ ] 01-ui-qa-step
-- [ ] 02-screenshot-capture
+- [x] 01-ui-qa-step — commit `94a1b76`, 409 tests passing
+- [ ] 02-screenshot-capture — **blocked on Q1–Q3**
 - [ ] 03-ui-reviewer-wiring
 - [ ] 04-web-surfacing
 
@@ -161,4 +161,32 @@ already models · auto-fixing UI findings.
 assumptions — interfaces that ended up different, files that moved, decisions the
 plan did not anticipate)_
 
-- _(none yet)_
+### From 01 → 02
+
+- **The seam to fill.** `apps/worker/src/workflow/steps/ui-qa.ts` reads
+  `prisma.screenshot.findMany({ where: { taskId } })` and returns `SKIPPED` when
+  it finds nothing. Task 02 makes that query non-empty; it should not need to
+  change the step's shape.
+- **Enablement shape is decided:** `Project.settings.uiQa.enabled === true`, read
+  by `isUiQaEnabled()` in `workflow-engine.ts`. No migration was needed. Task 02
+  extends the same object with the base URL once Q2 is answered — anything not
+  explicitly `true` means off.
+- **Placement is decided:** after `RUN_TESTS`, before `REVIEW`, gated on
+  `testsPassed`. Capture therefore never runs against a build that failed its
+  checks.
+- **The step is `optional: true`**, which required a second router guard
+  (`failedFinally`) that the plan did not anticipate. Any future optional step
+  needs both guards or the router spins. A test covers it.
+- **A migration was needed after all** — `WorkflowStepKey` is a Prisma enum too.
+  `20260919120000_workflow_step_ui_qa` adds `UI_QA BEFORE 'REVIEW'`. Note for any
+  future schema work: hand-written migrations must **also** be applied to
+  `prisma/migrations/applied-datamodel.prisma`, the snapshot
+  `create-migration.mjs` diffs against, or the next generated migration re-emits
+  the change. Verified with `prisma migrate diff` → "empty migration".
+- **Untrusted-id handling already exists.** The step nulls any `screenshotId` a
+  reviewer returns that does not belong to the task. Task 03's equivalent
+  acceptance criterion is therefore already satisfied at this seam — verify
+  rather than rebuild.
+- **Unresolved, deliberately:** `UI_REVIEWER` is gated at `LEVEL_1_PLAN` to match
+  `REVIEW`. Task 02 puts a browser behind this role, which changes the risk
+  profile — revisit whether it should be `LEVEL_2_CODE`.

@@ -1,44 +1,45 @@
 # real-ui-qa
 
-Phase: plan revised | Iteration: 0 of 3
+Phase: task 01 complete | Iteration: 1 of 3
 Plan index: `.loop/plan-real-ui-qa.md`
 
-Done: intake · scope survey · plan index + 4 task specs · **re-survey after the
-tenant-isolation change (2026-09-19)** and plan revision. No code written — user
-chose plan-only.
+## Done
 
-## Baseline at re-survey — verified, not reported
+- Intake · scope survey · plan + 4 specs · re-survey after the tenant-isolation
+  change.
+- **Git baseline** — commit `9d58bc4`, 443 source files, no secrets or scratch.
+  B1 resolved.
+- **Task 01 — UI_QA workflow step** — commit `94a1b76`. Passed on iteration 1:
+  no blockers, all gates green.
+
+## Verified at `94a1b76` — ran, not reported
 
 - `pnpm lint` → clean (`--max-warnings=0`)
 - `pnpm typecheck` → clean, 11 packages + 3 apps
-- `pnpm test` → **394 passing / 51 files / 0 failing**
+- `pnpm test` → **409 passing / 0 failing** (baseline was 394; +15 new)
+- `prisma migrate diff` snapshot vs schema → "empty migration" (no drift)
 
-A later run below 394 is a regression, not noise.
+## Two defects the loop caught
 
-## What the update changed in this plan
-
-- Task 04 **reduced**: `apps/web/app/quality/ui-qa/page.tsx` already renders
-  findings, and `ownedScreenshotWhere` already scopes screenshot reads. The
-  remaining gap is rendering screenshots + correcting the "capture is mocked"
-  copy.
-- Task 02 **gained** two criteria: capture must be cancellable (browser killed,
-  no rows written), and every `Screenshot` row needs a `taskId` or `reviewRunId`
-  or fail-closed ownership makes it invisible to every tenant.
-- Task 01 **gained** a cancellation-race criterion.
-- New cross-cutting rule 7: tenant-scoped, fail-closed, from the first commit.
-
-Unchanged and re-verified: `persistUi` still has zero callers · no `UI_QA` in
-`WorkflowStepKey` or `STEP_HANDLERS` · Playwright still absent from the worker.
+1. **Infinite loop in the router.** `UI_QA` is `optional`, so the failed-step
+   loop skips past it; gating only on `done()` meant a failed UI QA was never
+   done and was re-requested forever. Caught by the optional-step test, fixed
+   with a `failedFinally` guard, and locked in by a dedicated termination test.
+2. **Stale migration snapshot.** `prisma/migrations/applied-datamodel.prisma`
+   is the baseline `create-migration.mjs` diffs against. A hand-written
+   migration left it stale, so the *next* generated migration would have
+   re-emitted the `UI_QA` change. Found during diff review, not by a test.
 
 ## Open blockers
 
-- B1: repo is **not under git**. The review phase reads a diff; without a
-  baseline there is nothing to diff and no rollback. Resolve before task 01.
-- B2: Q1 execution model (in-process / subprocess / deferred) — blocks task 02.
-- B3: Q2 who starts the app under test — blocks task 02.
-- B4: Q3 screenshot storage (base64 vs object storage) — blocks task 02.
+- B2: **Q1** execution model (in-process / subprocess / deferred) — blocks 02.
+- B3: **Q2** who starts the app under test — blocks 02.
+- B4: **Q3** screenshot storage (base64 vs object storage) — blocks 02.
 
-Resolved this round: none. B1–B4 all still open.
+Resolved this round: B1 (git baseline).
 
-Next: user answers B1 and Q1–Q3, then run the loop on `01-ui-qa-step` — its
-dependencies are satisfied and it is not blocked by Q1–Q3.
+## Next
+
+Task 02 is the only unblocked-by-dependency task, but it is **blocked on Q1–Q3**
+and those are user decisions, not implementer guesses. Nothing else in the plan
+can start: 03 and 04 both depend on 02.
