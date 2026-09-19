@@ -14,6 +14,16 @@ The governing rule of the whole system:
 
 ---
 
+## System at a glance
+
+![EngLoop system flow, bounded engineering loop, current capabilities, and next feature roadmap](docs/images/engloop-system-flow-roadmap.png)
+
+The visual summarizes the runtime path, the evidence-backed review loop, the
+capabilities available today, and the next delivery priorities. The diagrams
+and tables below provide the detailed, text-native reference.
+
+---
+
 ## The loop
 
 ```mermaid
