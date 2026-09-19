@@ -1,0 +1,38 @@
+{
+  "name": "@engloop/agent-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-independent coding-agent SDK: interface, registry and adapters.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node ../../scripts/clean.mjs .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@engloop/config": "workspace:*",
+    "@engloop/git": "workspace:*",
+    "@engloop/logger": "workspace:*",
+    "@engloop/schemas": "workspace:*",
+    "@engloop/types": "workspace:*",
+    "zod": "3.25.76",
+    "zod-to-json-schema": "3.24.6"
+  },
+  "devDependencies": {
+    "@engloop/testing": "workspace:*",
+    "vitest": "3.2.4"
+  }
+}

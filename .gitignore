@@ -1,0 +1,29 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+!.env.example
+workspace/
+.turbo/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+packages/db/src/generated/
+# GitHub App private keys: the key lives in .env, never in the repository.
+*.pem
+
+# Local scratch, IDE state and run artifacts — not source.
+.run/
+.runlogs/
+.tmp/
+.verify-tmp/
+.idea/
+Claude outputs/
+.gitignore-probe-DELETE-ME

@@ -1,0 +1,10 @@
+node_modules
+dist
+.next
+coverage
+pnpm-lock.yaml
+packages/db/src/generated
+# Repositories the worker clones for agents, and local scratch/run state.
+workspace
+.run
+.runlogs

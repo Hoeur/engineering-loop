@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Validation only needs a well-formed URL; no database is contacted.
+  DATABASE_URL: postgresql://engloop:engloop@localhost:5432/engloop?schema=public
+  AUTH_JWT_SECRET: ci-secret-that-is-long-enough-for-validation
+  SECRETS_ENCRYPTION_KEY: ci-secret-that-is-long-enough-for-validation
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  verify:
+    name: lint · typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build shared packages
+        run: pnpm build:packages
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm -r run typecheck
+
+      - name: Unit and integration tests
+        run: pnpm -r run test
+
+      - name: Build applications
+        run: pnpm -r --filter=./apps/** run build
+
+  # Deployment is intentionally not part of CI for the MVP.

@@ -1,0 +1,27 @@
+{
+  "name": "@engloop/testing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared test factories, fixtures and vitest presets.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node ../../scripts/clean.mjs .",
+    "test": "echo \"no tests in @engloop/testing\""
+  },
+  "dependencies": {
+    "@engloop/types": "workspace:*",
+    "@engloop/schemas": "workspace:*"
+  }
+}

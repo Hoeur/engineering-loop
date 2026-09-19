@@ -1,0 +1,1506 @@
+// EngLoop — multi-agent engineering orchestration platform.
+//
+// Enum members mirror `packages/types/src/enums.ts` exactly; `src/enum-parity.spec.ts`
+// fails the build if the two ever drift.
+
+generator client {
+  provider = "prisma-client-js"
+  // engineType = "client" turns off the Rust query engine entirely; the client
+  // plans queries with the WebAssembly query compiler bundled in @prisma/client.
+  engineType = "client"
+  // Connections are opened by the `pg` driver adapter passed to `new PrismaClient`,
+  // so no platform-specific engine binary is ever downloaded. See
+  // docs/adr/0001-engine-free-prisma.md.
+  previewFeatures = []
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum TaskStatus {
+  BACKLOG
+  PLANNING
+  PLAN_READY
+  QUEUED
+  IMPLEMENTING
+  IMPLEMENTATION_READY
+  TESTING
+  TEST_FAILED
+  REVIEWING
+  CHANGES_REQUESTED
+  FIXING
+  APPROVED
+  PR_READY
+  PR_CREATED
+  MERGED
+  COMPLETED
+  BLOCKED
+  FAILED
+  CANCELLED
+  NEEDS_HUMAN_REVIEW
+}
+
+enum TaskType {
+  FEATURE
+  BUG
+  REFACTOR
+  TEST
+  DOCUMENTATION
+  SECURITY
+  PERFORMANCE
+  UI
+  DEVOPS
+  INVESTIGATION
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RiskLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum TaskDependencyType {
+  BLOCKS
+  RELATES_TO
+  DUPLICATES
+}
+
+enum AgentRole {
+  PRODUCT
+  ARCHITECT
+  PLANNER
+  IMPLEMENTER
+  BACKEND_DEVELOPER
+  FRONTEND_DEVELOPER
+  DATABASE_ENGINEER
+  DEVOPS_ENGINEER
+  QA
+  UI_REVIEWER
+  CODE_REVIEWER
+  SECURITY_REVIEWER
+  PERFORMANCE_REVIEWER
+  DOCUMENTATION
+}
+
+enum AgentProviderKind {
+  CODEX
+  CLAUDE_CODE
+  GEMINI
+  OPENAI_API
+  ANTHROPIC_API
+  LOCAL_LLM
+  CUSTOM_CLI
+  MOCK
+}
+
+enum AgentRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+  BUDGET_EXCEEDED
+}
+
+enum AgentMessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum WorkflowStepKey {
+  ANALYZE_REPOSITORY
+  PLAN
+  CREATE_TASKS
+  CREATE_WORKTREE
+  IMPLEMENT
+  RUN_TESTS
+  REVIEW
+  FIX
+  RETEST
+  FINAL_REVIEW
+  PREPARE_PR
+  COMPLETE
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  SKIPPED
+  WAITING_FOR_HUMAN
+}
+
+enum CheckType {
+  LINT
+  TYPECHECK
+  UNIT
+  INTEGRATION
+  BUILD
+  E2E
+  SECURITY
+  CUSTOM
+}
+
+enum CheckStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  SKIPPED
+  TIMEOUT
+}
+
+enum ReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
+  COMMENTED
+  FAILED
+}
+
+enum ReviewCategory {
+  CORRECTNESS
+  ARCHITECTURE
+  SECURITY
+  PERFORMANCE
+  TESTING
+  MAINTAINABILITY
+  UI
+  ACCESSIBILITY
+  DOCUMENTATION
+}
+
+enum FindingStatus {
+  OPEN
+  FIXING
+  RESOLVED
+  WONT_FIX
+  ACCEPTED_RISK
+}
+
+enum ReviewKind {
+  CODE
+  SECURITY
+  PERFORMANCE
+  UI
+  ARCHITECTURE
+}
+
+enum Viewport {
+  DESKTOP
+  TABLET
+  MOBILE
+}
+
+enum UiFindingCategory {
+  LAYOUT
+  SPACING
+  TYPOGRAPHY
+  RESPONSIVE
+  OVERFLOW
+  ACCESSIBILITY
+  CONTRAST
+  NAVIGATION
+  EMPTY_STATE
+  LOADING_STATE
+  ERROR_STATE
+  INTERACTION
+  CONSOLE_ERROR
+  NETWORK_ERROR
+}
+
+enum RepositoryProvider {
+  GITHUB
+  GITLAB
+  BITBUCKET
+  LOCAL
+}
+
+enum RepositoryStatus {
+  CONNECTED
+  SYNCING
+  ERROR
+  DISCONNECTED
+}
+
+enum PullRequestStatus {
+  DRAFT
+  OPEN
+  MERGED
+  CLOSED
+}
+
+enum WorktreeStatus {
+  CREATING
+  ACTIVE
+  DIRTY
+  RELEASED
+  ERROR
+}
+
+enum PermissionLevel {
+  LEVEL_0_OBSERVE
+  LEVEL_1_PLAN
+  LEVEL_2_CODE
+  LEVEL_3_PR
+  LEVEL_4_MERGE
+  LEVEL_5_DEPLOY
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MAINTAINER
+  MEMBER
+  VIEWER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ApprovalKind {
+  PLAN
+  IMPLEMENTATION
+  PULL_REQUEST
+  MERGE
+  DEPLOY
+  BUDGET_OVERRIDE
+}
+
+enum ScheduleType {
+  REPOSITORY_REVIEW
+  TECH_DEBT_ANALYSIS
+  SECURITY_SCAN
+  DEPENDENCY_REVIEW
+  TEST_SUITE
+  BACKLOG_ANALYSIS
+  ARCHITECTURE_REVIEW
+  UI_QUALITY_REVIEW
+  TASK_EXECUTION
+}
+
+enum ArtifactKind {
+  DIFF
+  LOG
+  REPORT
+  SCREENSHOT
+  COVERAGE
+  PLAN
+  TRACE
+  OTHER
+}
+
+enum NotificationType {
+  TASK_FAILED
+  TEST_FAILED
+  REVIEW_REQUIRED
+  HUMAN_APPROVAL_REQUIRED
+  AGENT_FAILED
+  PR_READY
+  COST_LIMIT_REACHED
+  WORKFLOW_COMPLETED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SLACK
+  WEBHOOK
+}
+
+enum AuditAction {
+  AGENT_STARTED
+  AGENT_STOPPED
+  COMMAND_EXECUTED
+  TASK_TRANSITIONED
+  GIT_ACTION
+  APPROVAL_DECISION
+  REVIEW_DECISION
+  CONFIGURATION_CHANGED
+  SCHEDULE_CHANGED
+  SECRET_ACCESSED
+}
+
+enum ArchitectureDecisionStatus {
+  PROPOSED
+  ACCEPTED
+  DEPRECATED
+  SUPERSEDED
+}
+
+enum MemoryKind {
+  ARCHITECTURE
+  TECH_STACK
+  CONVENTIONS
+  API_CONVENTIONS
+  UI_CONVENTIONS
+  TEST_COMMANDS
+  DEPLOYMENT
+  TECH_DEBT
+  KNOWN_BUGS
+  COMPLETED_FEATURES
+  IMPORTANT_MODULES
+  DECISIONS
+}
+
+enum EpicStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+// ===========================================================================
+// Identity & tenancy
+// ===========================================================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  avatarUrl    String?
+  passwordHash String?
+  isSystem     Boolean  @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships       OrganizationMember[]
+  createdTasks      Task[]               @relation("TaskCreatedBy")
+  comments          TaskComment[]
+  approvalsRequested Approval[]          @relation("ApprovalRequestedBy")
+  approvalsDecided  Approval[]           @relation("ApprovalDecidedBy")
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  decisions         ArchitectureDecision[]
+  githubInstallationsConnected GitHubInstallation[] @relation("GitHubInstallationConnectedBy")
+  githubAuthorizationAttempts  GitHubAuthorizationAttempt[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Organization {
+  id                String        @id @default(cuid())
+  name              String
+  slug              String        @unique
+  /// Default provider key used when a role has no explicit agent assignment.
+  defaultProviderKey String       @default("mock")
+  costBudgetUsd     Decimal       @default(500) @db.Decimal(12, 4)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  members        OrganizationMember[]
+  projects       Project[]
+  agents         Agent[]
+  agentProviders AgentProvider[]
+  auditLogs      AuditLog[]
+  usageRecords   UsageRecord[]
+  costRecords    CostRecord[]
+  notifications  Notification[]
+  webhookEvents  WebhookEvent[]
+  githubInstallations GitHubInstallation[]
+  githubAuthorizationAttempts GitHubAuthorizationAttempt[]
+
+  @@index([slug])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(MEMBER)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+// ===========================================================================
+// Projects & repositories
+// ===========================================================================
+
+model Project {
+  id              String          @id @default(cuid())
+  organizationId  String
+  name            String
+  slug            String
+  /// Prefix for generated task keys, e.g. ENG -> ENG-101.
+  key             String
+  description     String?
+  status          ProjectStatus   @default(ACTIVE)
+  permissionLevel PermissionLevel @default(LEVEL_3_PR)
+  maxReviewCycles Int             @default(3)
+  maxTaskAttempts Int             @default(3)
+  costBudgetUsd   Decimal         @default(50) @db.Decimal(12, 4)
+  /// Role -> agent-provider key overrides for this project.
+  roleAssignments Json            @default("{}")
+  settings        Json            @default("{}")
+  taskSequence    Int             @default(100)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  repositories Repository[]
+  epics        Epic[]
+  features     Feature[]
+  tasks        Task[]
+  agents       Agent[]
+  schedules    Schedule[]
+  memories     ProjectMemory[]
+  decisions    ArchitectureDecision[]
+  workflowRuns WorkflowRun[]
+  usageRecords UsageRecord[]
+  costRecords  CostRecord[]
+  approvals    Approval[]
+  auditLogs    AuditLog[]
+
+  @@unique([organizationId, slug])
+  @@unique([organizationId, key])
+  @@index([organizationId, status])
+  @@map("projects")
+}
+
+model Repository {
+  id              String             @id @default(cuid())
+  projectId       String
+  name            String
+  provider        RepositoryProvider @default(LOCAL)
+  status          RepositoryStatus   @default(CONNECTED)
+  remoteUrl       String?
+  /// Absolute path for LOCAL repositories used in development.
+  localPath       String?
+  defaultBranch   String             @default("main")
+  primaryLanguage String?
+  frameworks      String[]           @default([])
+  packageManager  String             @default("pnpm")
+  /// Repository-specific commands: { lint, typecheck, unit, build, e2e, ... }
+  commands        Json               @default("{}")
+  /// GitHub App installation id — placeholder until real App auth lands.
+  installationId  String?
+  githubInstallationRecordId String?
+  githubRepositoryId String?
+  githubNodeId       String?
+  githubOwner        String?
+  githubFullName     String?
+  githubPrivate      Boolean?
+  githubArchived     Boolean            @default(false)
+  githubHtmlUrl      String?
+  lastSyncedAt    DateTime?
+  lastAnalyzedAt  DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  credentials RepositoryCredential[]
+  tasks       Task[]
+  worktrees   GitWorktree[]
+  branches    GitBranch[]
+  commits     Commit[]
+  pullRequests PullRequest[]
+  schedules   Schedule[]
+  githubInstallation GitHubInstallation? @relation(fields: [githubInstallationRecordId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, name])
+  @@index([projectId, status])
+  @@unique([githubInstallationRecordId, githubRepositoryId])
+  @@index([installationId, githubRepositoryId])
+  @@map("repositories")
+}
+
+model GitHubInstallation {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  externalId          String   @unique
+  accountId           String
+  accountLogin        String
+  accountType         String
+  accountAvatarUrl    String?
+  repositorySelection String
+  targetType          String
+  permissions         Json     @default("{}")
+  events              String[] @default([])
+  suspendedAt         DateTime?
+  connectedByUserId   String
+  lastSyncedAt        DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectedBy User @relation("GitHubInstallationConnectedBy", fields: [connectedByUserId], references: [id], onDelete: Restrict)
+  repositories Repository[]
+
+  @@index([organizationId, accountLogin])
+  @@index([organizationId, suspendedAt])
+  @@map("github_installations")
+}
+
+model GitHubAuthorizationAttempt {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  stateHash      String   @unique
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, consumedAt])
+  @@index([expiresAt])
+  @@map("github_authorization_attempts")
+}
+
+model RepositoryCredential {
+  id             String   @id @default(cuid())
+  repositoryId   String
+  name           String
+  kind           String
+  /// AES-256-GCM ciphertext. Plaintext credentials are never persisted.
+  encryptedValue String
+  iv             String
+  authTag        String
+  lastUsedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, name])
+  @@map("repository_credentials")
+}
+
+// ===========================================================================
+// Work breakdown
+// ===========================================================================
+
+model Epic {
+  id          String     @id @default(cuid())
+  projectId   String
+  title       String
+  description String?
+  status      EpicStatus @default(PLANNED)
+  targetDate  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  features Feature[]
+  tasks    Task[]
+
+  @@index([projectId, status])
+  @@map("epics")
+}
+
+model Feature {
+  id          String     @id @default(cuid())
+  projectId   String
+  epicId      String?
+  title       String
+  description String?
+  status      EpicStatus @default(PLANNED)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  epic    Epic?   @relation(fields: [epicId], references: [id], onDelete: SetNull)
+  tasks   Task[]
+
+  @@index([projectId, status])
+  @@index([epicId])
+  @@map("features")
+}
+
+model Task {
+  id                  String     @id @default(cuid())
+  projectId           String
+  repositoryId        String?
+  epicId              String?
+  featureId           String?
+  parentTaskId        String?
+  /// Human-facing identifier, e.g. ENG-101. Unique per project.
+  key                 String
+  title               String
+  description         String     @default("")
+  objective           String     @default("")
+  type                TaskType   @default(FEATURE)
+  priority            Priority   @default(MEDIUM)
+  severity            Severity?
+  status              TaskStatus @default(BACKLOG)
+  riskLevel           RiskLevel  @default(MEDIUM)
+  acceptanceCriteria  String[]   @default([])
+  implementationNotes String[]   @default([])
+  suggestedFiles      String[]   @default([])
+  requiredChecks      CheckType[] @default([])
+  assignedAgentId     String?
+  branchName          String?
+  worktreePath        String?
+  attemptCount        Int        @default(0)
+  maxAttempts         Int        @default(3)
+  reviewCycle         Int        @default(0)
+  estimatedCost       Decimal    @default(0) @db.Decimal(12, 6)
+  actualCost          Decimal    @default(0) @db.Decimal(12, 6)
+  /// Latest planner output, kept for the task detail "Plan" section.
+  planSummary         String?
+  plan                Json?
+  blockedReason       String?
+  createdById         String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  startedAt           DateTime?
+  completedAt         DateTime?
+  lastActivityAt      DateTime   @default(now())
+
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repository   Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+  epic         Epic?       @relation(fields: [epicId], references: [id], onDelete: SetNull)
+  feature      Feature?    @relation(fields: [featureId], references: [id], onDelete: SetNull)
+  parentTask   Task?       @relation("TaskSubtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  subtasks     Task[]      @relation("TaskSubtasks")
+  assignedAgent Agent?     @relation(fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  createdBy    User?       @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  dependencies TaskDependency[] @relation("DependentTask")
+  dependents   TaskDependency[] @relation("DependsOnTask")
+  comments     TaskComment[]
+  workflowRuns WorkflowRun[]
+  agentRuns    AgentRun[]
+  testRuns     TestRun[]
+  reviewRuns   ReviewRun[]
+  worktrees    GitWorktree[]
+  commits      Commit[]
+  pullRequests PullRequest[]
+  artifacts    Artifact[]
+  approvals    Approval[]
+  usageRecords UsageRecord[]
+  costRecords  CostRecord[]
+
+  @@unique([projectId, key])
+  @@index([projectId, status])
+  @@index([repositoryId, status])
+  @@index([status, priority])
+  @@index([assignedAgentId])
+  @@index([lastActivityAt])
+  @@map("tasks")
+}
+
+model TaskDependency {
+  id             String             @id @default(cuid())
+  taskId         String
+  dependsOnTaskId String
+  type           TaskDependencyType @default(BLOCKS)
+  createdAt      DateTime           @default(now())
+
+  task        Task @relation("DependentTask", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn   Task @relation("DependsOnTask", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
+  @@map("task_dependencies")
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String?
+  agentRunId String?
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task     Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author   User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  agentRun AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@map("task_comments")
+}
+
+// ===========================================================================
+// Agents
+// ===========================================================================
+
+model AgentProvider {
+  id              String            @id @default(cuid())
+  organizationId  String
+  /// Stable lookup key used by the runtime registry, e.g. "mock", "codex".
+  key             String
+  displayName     String
+  kind            AgentProviderKind
+  enabled         Boolean           @default(true)
+  defaultModel    String?
+  availableModels String[]          @default([])
+  /// Non-secret provider settings. Credentials live in encrypted columns below.
+  configuration   Json              @default("{}")
+  /// AES-256-GCM ciphertext of the provider API key; never returned by the API.
+  encryptedCredential String?
+  credentialIv    String?
+  credentialAuthTag String?
+  pricing         Json              @default("{}")
+  healthy         Boolean           @default(true)
+  lastHealthCheckAt DateTime?
+  lastHealthDetail  String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agents       Agent[]
+  agentRuns    AgentRun[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, enabled])
+  @@map("agent_providers")
+}
+
+model Agent {
+  id              String          @id @default(cuid())
+  organizationId  String
+  projectId       String?
+  providerId      String
+  name            String
+  role            AgentRole
+  model           String?
+  enabled         Boolean         @default(true)
+  systemPrompt    String?
+  maxTokens       Int             @default(200000)
+  maxCostUsd      Decimal         @default(5) @db.Decimal(12, 4)
+  timeoutMs       Int             @default(900000)
+  maxRetries      Int             @default(2)
+  permissionLevel PermissionLevel @default(LEVEL_3_PR)
+  allowedCommands String[]        @default([])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider       AgentProvider       @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  configurations AgentConfiguration[]
+  runs           AgentRun[]
+  tasks          Task[]
+
+  @@unique([organizationId, projectId, role, name])
+  @@index([organizationId, role])
+  @@index([projectId, role])
+  @@map("agents")
+}
+
+model AgentConfiguration {
+  id        String   @id @default(cuid())
+  agentId   String
+  version   Int      @default(1)
+  /// Free-form provider parameters (temperature, tool policy, prompt overrides).
+  values    Json     @default("{}")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId, active])
+  @@map("agent_configurations")
+}
+
+model AgentRun {
+  id             String         @id @default(cuid())
+  taskId         String?
+  workflowRunId  String?
+  workflowStepId String?
+  agentId        String?
+  providerId     String?
+  role           AgentRole
+  providerKey    String
+  model          String?
+  status         AgentRunStatus @default(PENDING)
+  sessionId      String?
+  /// Structured request handed to the provider (already schema-validated).
+  input          Json?
+  /// Structured response, validated against the role's output schema.
+  output         Json?
+  rawOutput      String?
+  errorCode      String?
+  errorMessage   String?
+  inputTokens    Int            @default(0)
+  outputTokens   Int            @default(0)
+  cachedTokens   Int            @default(0)
+  totalTokens    Int            @default(0)
+  estimatedCost  Decimal        @default(0) @db.Decimal(12, 6)
+  attempt        Int            @default(1)
+  workspacePath  String?
+  traceId        String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  durationMs     Int?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  task         Task?          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workflowRun  WorkflowRun?   @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  workflowStep WorkflowStep?  @relation(fields: [workflowStepId], references: [id], onDelete: SetNull)
+  agent        Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  provider     AgentProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  messages     AgentMessage[]
+  comments     TaskComment[]
+  reviewRuns   ReviewRun[]
+  artifacts    Artifact[]
+  usageRecords UsageRecord[]
+  costRecords  CostRecord[]
+
+  @@index([taskId, createdAt])
+  @@index([workflowRunId])
+  @@index([status, createdAt])
+  @@index([role, status])
+  @@map("agent_runs")
+}
+
+model AgentMessage {
+  id         String           @id @default(cuid())
+  agentRunId String
+  role       AgentMessageRole
+  content    String
+  sequence   Int
+  tokens     Int?
+  metadata   Json             @default("{}")
+  createdAt  DateTime         @default(now())
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+
+  @@unique([agentRunId, sequence])
+  @@index([agentRunId])
+  @@map("agent_messages")
+}
+
+// ===========================================================================
+// Workflow
+// ===========================================================================
+
+model WorkflowDefinition {
+  id          String   @id @default(cuid())
+  key         String
+  version     Int      @default(1)
+  name        String
+  description String?
+  /// Serialised step list; the executable definition lives in @engloop/workflow.
+  steps       Json     @default("[]")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs WorkflowRun[]
+
+  @@unique([key, version])
+  @@map("workflow_definitions")
+}
+
+model WorkflowRun {
+  id             String    @id @default(cuid())
+  definitionId   String?
+  definitionKey  String
+  projectId      String
+  taskId         String?
+  status         RunStatus @default(PENDING)
+  /// Serialised WorkflowState — the input to the pure routing function.
+  state          Json      @default("{}")
+  currentStepKey WorkflowStepKey?
+  reviewCycle    Int       @default(0)
+  attempt        Int       @default(0)
+  error          String?
+  traceId        String?
+  /// Deduplication key: replaying a start job must not fork a second run.
+  idempotencyKey String?   @unique
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  definition WorkflowDefinition? @relation(fields: [definitionId], references: [id], onDelete: SetNull)
+  project    Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task       Task?               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  steps      WorkflowStep[]
+  agentRuns  AgentRun[]
+  testRuns   TestRun[]
+  reviewRuns ReviewRun[]
+  approvals  Approval[]
+
+  @@index([projectId, status])
+  @@index([taskId, createdAt])
+  @@index([status, createdAt])
+  @@map("workflow_runs")
+}
+
+model WorkflowStep {
+  id            String          @id @default(cuid())
+  workflowRunId String
+  stepKey       WorkflowStepKey
+  sequence      Int
+  status        RunStatus       @default(PENDING)
+  attempt       Int             @default(1)
+  maxAttempts   Int             @default(2)
+  input         Json?
+  output        Json?
+  error         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  durationMs    Int?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  agentRuns   AgentRun[]
+  testRuns    TestRun[]
+  reviewRuns  ReviewRun[]
+
+  @@unique([workflowRunId, sequence])
+  @@index([workflowRunId, status])
+  @@map("workflow_steps")
+}
+
+// ===========================================================================
+// Git
+// ===========================================================================
+
+model GitWorktree {
+  id           String         @id @default(cuid())
+  repositoryId String
+  taskId       String?
+  path         String
+  branch       String
+  baseRef      String
+  status       WorktreeStatus @default(CREATING)
+  clean        Boolean        @default(true)
+  releasedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  task       Task?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@unique([repositoryId, path])
+  @@index([taskId])
+  @@index([status])
+  @@map("git_worktrees")
+}
+
+model GitBranch {
+  id           String   @id @default(cuid())
+  repositoryId String
+  name         String
+  baseBranch   String
+  headSha      String?
+  ahead        Int      @default(0)
+  behind       Int      @default(0)
+  pushed       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  repository   Repository    @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  commits      Commit[]
+  pullRequests PullRequest[]
+
+  @@unique([repositoryId, name])
+  @@map("git_branches")
+}
+
+model Commit {
+  id           String   @id @default(cuid())
+  repositoryId String
+  branchId     String?
+  taskId       String?
+  sha          String
+  message      String
+  authorName   String
+  authorEmail  String
+  filesChanged Int      @default(0)
+  additions    Int      @default(0)
+  deletions    Int      @default(0)
+  committedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  branch     GitBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  task       Task?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@unique([repositoryId, sha])
+  @@index([taskId])
+  @@map("commits")
+}
+
+model PullRequest {
+  id           String            @id @default(cuid())
+  repositoryId String
+  branchId     String?
+  taskId       String?
+  number       Int?
+  title        String
+  body         String            @default("")
+  status       PullRequestStatus @default(DRAFT)
+  url          String?
+  headBranch   String
+  baseBranch   String
+  draft        Boolean           @default(false)
+  /// Set when the PR exists only in EngLoop because no remote is configured.
+  local        Boolean           @default(true)
+  mergedAt     DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  branch     GitBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  task       Task?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@unique([repositoryId, number])
+  @@index([taskId])
+  @@index([status])
+  @@map("pull_requests")
+}
+
+// ===========================================================================
+// Verification: tests, reviews, UI QA
+// ===========================================================================
+
+model TestRun {
+  id             String      @id @default(cuid())
+  taskId         String
+  workflowRunId  String?
+  workflowStepId String?
+  status         CheckStatus @default(QUEUED)
+  /// True only when every required check passed. AI claims never set this.
+  passed         Boolean     @default(false)
+  worktreePath   String?
+  commitSha      String?
+  attempt        Int         @default(1)
+  totalChecks    Int         @default(0)
+  passedChecks   Int         @default(0)
+  failedChecks   Int         @default(0)
+  durationMs     Int?
+  coverage       Json?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  task         Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workflowRun  WorkflowRun?  @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  workflowStep WorkflowStep? @relation(fields: [workflowStepId], references: [id], onDelete: SetNull)
+  results      TestResult[]
+  artifacts    Artifact[]
+
+  @@index([taskId, createdAt])
+  @@index([status])
+  @@map("test_runs")
+}
+
+model TestResult {
+  id         String      @id @default(cuid())
+  testRunId  String
+  checkType  CheckType
+  name       String
+  status     CheckStatus @default(QUEUED)
+  command    String
+  exitCode   Int?
+  stdout     String      @default("")
+  stderr     String      @default("")
+  durationMs Int         @default(0)
+  truncated  Boolean     @default(false)
+  startedAt  DateTime?
+  completedAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  testRun TestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+
+  @@index([testRunId, checkType])
+  @@index([status])
+  @@map("test_results")
+}
+
+model ReviewRun {
+  id             String         @id @default(cuid())
+  taskId         String
+  workflowRunId  String?
+  workflowStepId String?
+  agentRunId     String?
+  kind           ReviewKind     @default(CODE)
+  decision       ReviewDecision @default(COMMENTED)
+  status         RunStatus      @default(PENDING)
+  cycle          Int            @default(1)
+  score          Int            @default(0)
+  summary        String         @default("")
+  coverageAssessment     String?
+  architectureAssessment String?
+  securityAssessment     String?
+  performanceAssessment  String?
+  diffSha        String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  task         Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workflowRun  WorkflowRun?    @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  workflowStep WorkflowStep?   @relation(fields: [workflowStepId], references: [id], onDelete: SetNull)
+  agentRun     AgentRun?       @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  findings     ReviewFinding[]
+  screenshots  Screenshot[]
+
+  @@index([taskId, createdAt])
+  @@index([decision])
+  @@map("review_runs")
+}
+
+/// One row per structured finding. UI findings reuse this table via
+/// `uiCategory` + `viewport` + `screenshotId`, which keeps "open findings"
+/// a single indexed query across code and UI review.
+model ReviewFinding {
+  id             String             @id @default(cuid())
+  reviewRunId    String
+  taskId         String?
+  fixTaskId      String?
+  severity       Severity
+  category       ReviewCategory
+  uiCategory     UiFindingCategory?
+  viewport       Viewport?
+  screenshotId   String?
+  file           String?
+  line           Int?
+  problem        String
+  requiredFix    String
+  evidence       String?
+  status         FindingStatus      @default(OPEN)
+  resolutionNote String?
+  resolvedAt     DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  reviewRun  ReviewRun   @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+  screenshot Screenshot? @relation(fields: [screenshotId], references: [id], onDelete: SetNull)
+
+  @@index([reviewRunId, status])
+  @@index([taskId, status])
+  @@index([severity, status])
+  @@map("review_findings")
+}
+
+model Screenshot {
+  id          String   @id @default(cuid())
+  reviewRunId String?
+  taskId      String?
+  page        String
+  viewport    Viewport
+  width       Int
+  height      Int
+  storagePath String
+  /// Base64 data URI used by the MVP so screenshots render without object storage.
+  dataUri     String?
+  consoleErrors String[] @default([])
+  failedRequests String[] @default([])
+  createdAt   DateTime @default(now())
+
+  reviewRun ReviewRun?      @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+  findings  ReviewFinding[]
+
+  @@index([taskId])
+  @@index([reviewRunId])
+  @@map("screenshots")
+}
+
+model Artifact {
+  id          String       @id @default(cuid())
+  taskId      String?
+  agentRunId  String?
+  testRunId   String?
+  kind        ArtifactKind @default(OTHER)
+  name        String
+  contentType String       @default("text/plain")
+  sizeBytes   Int          @default(0)
+  storagePath String?
+  /// Inline content for small artifacts (diffs, logs) so the MVP needs no blob store.
+  content     String?
+  metadata    Json         @default("{}")
+  createdAt   DateTime     @default(now())
+
+  task     Task?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agentRun AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  testRun  TestRun?  @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, kind])
+  @@index([agentRunId])
+  @@map("artifacts")
+}
+
+// ===========================================================================
+// Automation & knowledge
+// ===========================================================================
+
+model Schedule {
+  id             String       @id @default(cuid())
+  projectId      String
+  repositoryId   String?
+  name           String
+  type           ScheduleType
+  cronExpression String
+  timezone       String       @default("UTC")
+  enabled        Boolean      @default(true)
+  configuration  Json         @default("{}")
+  lastRunAt      DateTime?
+  nextRunAt      DateTime?
+  lastStatus     RunStatus?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repository Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, name])
+  @@index([enabled, nextRunAt])
+  @@map("schedules")
+}
+
+model ProjectMemory {
+  id        String     @id @default(cuid())
+  projectId String
+  kind      MemoryKind
+  version   Int        @default(1)
+  active    Boolean    @default(true)
+  content   String
+  metadata  Json       @default("{}")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, version])
+  @@index([projectId, kind, active])
+  @@map("project_memories")
+}
+
+model ArchitectureDecision {
+  id           String                     @id @default(cuid())
+  projectId    String
+  number       Int
+  title        String
+  context      String
+  decision     String
+  alternatives String[]                   @default([])
+  consequences String[]                   @default([])
+  status       ArchitectureDecisionStatus @default(PROPOSED)
+  supersededById String?
+  authorId     String?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@map("architecture_decisions")
+}
+
+// ===========================================================================
+// Governance, billing, platform
+// ===========================================================================
+
+model UsageRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String?
+  taskId         String?
+  agentRunId     String?
+  providerKey    String
+  model          String?
+  role           AgentRole?
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  cachedTokens   Int      @default(0)
+  totalTokens    Int      @default(0)
+  durationMs     Int      @default(0)
+  occurredAt     DateTime @default(now())
+  /// Truncated day used for cheap grouping in the usage dashboard.
+  occurredOn     DateTime @db.Date
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  agentRun     AgentRun?    @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, occurredOn])
+  @@index([projectId, occurredOn])
+  @@index([providerKey, occurredOn])
+  @@map("usage_records")
+}
+
+model CostRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String?
+  taskId         String?
+  agentRunId     String?
+  providerKey    String
+  model          String?
+  estimatedCost  Decimal  @default(0) @db.Decimal(12, 6)
+  actualCost     Decimal? @db.Decimal(12, 6)
+  currency       String   @default("USD")
+  occurredAt     DateTime @default(now())
+  occurredOn     DateTime @db.Date
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  agentRun     AgentRun?    @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, occurredOn])
+  @@index([projectId, occurredOn])
+  @@map("cost_records")
+}
+
+model Notification {
+  id             String              @id @default(cuid())
+  organizationId String
+  userId         String?
+  type           NotificationType
+  channel        NotificationChannel @default(IN_APP)
+  title          String
+  body           String              @default("")
+  /// { taskId, taskKey, workflowRunId, ... } — used to build the deep link.
+  payload        Json                @default("{}")
+  severity       Severity            @default(INFO)
+  readAt         DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([organizationId, createdAt])
+  @@map("notifications")
+}
+
+model Approval {
+  id             String         @id @default(cuid())
+  projectId      String
+  taskId         String?
+  workflowRunId  String?
+  kind           ApprovalKind
+  status         ApprovalStatus @default(PENDING)
+  reason         String?
+  note           String?
+  requestedById  String?
+  decidedById    String?
+  decidedAt      DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workflowRun WorkflowRun? @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  requestedBy User?        @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy   User?        @relation("ApprovalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([taskId])
+  @@map("approvals")
+}
+
+model AuditLog {
+  id             String      @id @default(cuid())
+  organizationId String
+  projectId      String?
+  taskId         String?
+  action         AuditAction
+  /// e.g. "task", "agent_run", "schedule" — with entityId, identifies the subject.
+  entityType     String
+  entityId       String?
+  actorType      String      @default("SYSTEM")
+  actorId        String?
+  userId         String?
+  summary        String
+  metadata       Json        @default("{}")
+  traceId        String?
+  createdAt      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([taskId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model WebhookEvent {
+  id             String             @id @default(cuid())
+  organizationId String
+  source         String
+  eventType      String
+  /// Provider delivery id — the dedupe key for at-least-once webhook delivery.
+  externalId     String?
+  status         WebhookEventStatus @default(RECEIVED)
+  payload        Json
+  signatureValid Boolean            @default(false)
+  error          String?
+  processedAt    DateTime?
+  createdAt      DateTime           @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([source, externalId])
+  @@index([organizationId, createdAt])
+  @@index([status])
+  @@map("webhook_events")
+}

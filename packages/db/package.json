@@ -1,0 +1,46 @@
+{
+  "name": "@engloop/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prisma schema, client singleton, migrations and seed data.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "node scripts/create-migration.mjs",
+    "migrate:deploy": "node scripts/deploy-migrations.mjs",
+    "reset": "node scripts/reset-database.mjs",
+    "studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts",
+    "bootstrap:real": "tsx prisma/bootstrap-real.ts",
+    "test": "vitest run",
+    "clean": "node ../../scripts/clean.mjs .",
+    "migrate:status": "prisma migrate status",
+    "migrate:baseline": "node scripts/deploy-migrations.mjs --baseline"
+  },
+  "dependencies": {
+    "@engloop/types": "workspace:*",
+    "@prisma/adapter-pg": "6.16.2",
+    "@prisma/client": "6.16.2",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "8.15.5",
+    "dotenv": "16.6.1",
+    "prisma": "6.16.2",
+    "tsx": "4.20.6",
+    "vitest": "3.2.4"
+  }
+}

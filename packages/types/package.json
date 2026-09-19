@@ -1,0 +1,29 @@
+{
+  "name": "@engloop/types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework-free domain types, enums and event contracts shared across EngLoop.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node ../../scripts/clean.mjs .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vitest": "3.2.4"
+  }
+}

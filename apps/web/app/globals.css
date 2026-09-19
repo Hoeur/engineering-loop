@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * EngLoop design tokens.
+ *
+ * Light is the primary mode (spec section 24). The dark palette redefines the
+ * same variables so no component ever branches on theme.
+ */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 24% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 24% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 24% 12%;
+
+    --primary: 222 60% 22%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 24% 18%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 88%;
+    --ring: 222 60% 40%;
+
+    --success: 152 60% 40%;
+    --success-strong: 154 72% 24%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-strong: 26 82% 32%;
+    --warning-foreground: 0 0% 100%;
+
+    --danger: 0 72% 51%;
+    --danger-strong: 0 70% 38%;
+    --danger-foreground: 0 0% 100%;
+
+    --info: 214 90% 52%;
+    --info-strong: 216 82% 38%;
+    --info-foreground: 0 0% 100%;
+
+    --accent: 262 72% 56%;
+    --accent-strong: 263 62% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    --radius: 0.5rem;
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  }
+
+  .dark {
+    --background: 224 24% 8%;
+    --foreground: 220 14% 94%;
+
+    --card: 224 22% 11%;
+    --card-foreground: 220 14% 94%;
+
+    --popover: 224 22% 11%;
+    --popover-foreground: 220 14% 94%;
+
+    --primary: 213 94% 68%;
+    --primary-foreground: 224 40% 10%;
+
+    --secondary: 223 18% 17%;
+    --secondary-foreground: 220 14% 94%;
+
+    --muted: 223 18% 16%;
+    --muted-foreground: 220 10% 64%;
+
+    --border: 223 16% 20%;
+    --input: 223 16% 24%;
+    --ring: 213 94% 60%;
+
+    --success: 152 52% 46%;
+    --success-strong: 150 60% 66%;
+
+    --warning: 38 86% 56%;
+    --warning-strong: 40 90% 70%;
+
+    --danger: 0 68% 58%;
+    --danger-strong: 0 84% 74%;
+
+    --info: 213 90% 62%;
+    --info-strong: 213 92% 76%;
+
+    --accent: 262 70% 66%;
+    --accent-strong: 262 84% 80%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* No screen may scroll sideways (spec section 36). */
+  body,
+  #__next {
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+  }
+}
