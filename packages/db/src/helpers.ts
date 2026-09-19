@@ -25,3 +25,27 @@ export const toDateOnly = (value: Date = new Date()): Date =>
 
 export const jsonOrNull = (value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull =>
   value === undefined || value === null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+
+/**
+ * Retries a write that races another one for the same unique key.
+ *
+ * Allocating a project-scoped task key reads `taskSequence` and writes a row
+ * built from it. Under Postgres' default READ COMMITTED that pair is not
+ * serialisable: two concurrent transactions can read the same sequence and then
+ * collide on `(projectId, key)`. Wrapping the whole transaction and retrying
+ * re-reads the (already incremented) sequence, so the second attempt succeeds.
+ *
+ * Retries only on P2002 — every other failure propagates untouched.
+ */
+export const retryOnUniqueViolation = async <T>(
+  operation: () => Promise<T>,
+  attempts = 3,
+): Promise<T> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= attempts || !isPrismaError(error, UNIQUE_VIOLATION)) throw error;
+    }
+  }
+};

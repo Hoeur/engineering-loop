@@ -22,7 +22,7 @@ import type {
   RunTaskDto,
   UpdateTaskDto,
 } from '@engloop/schemas';
-import type { Prisma, Task } from '@engloop/db';
+import { retryOnUniqueViolation, type Prisma, type Task } from '@engloop/db';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EventBus } from '../../infrastructure/events/event-bus';
 import { WORKFLOW_ORCHESTRATOR } from '../../infrastructure/queue/bullmq-orchestrator';
@@ -207,8 +207,12 @@ export class TasksService {
   // -------------------------------------------------------------------------
 
   /**
-   * Allocates the next project-scoped task key inside a transaction so two
-   * concurrent creates can never mint the same ENG-nnn.
+   * Allocates the next project-scoped task key.
+   *
+   * The increment is atomic, but reading it and inserting the row are not
+   * serialisable under READ COMMITTED, so two concurrent creates can still mint
+   * the same ENG-nnn. The unique index catches that and the caller retries —
+   * see `retryOnUniqueViolation`.
    */
   private async nextKey(tx: Prisma.TransactionClient, projectId: string): Promise<string> {
     const project = await tx.project.update({
@@ -227,44 +231,48 @@ export class TasksService {
     if (!project) throw AppError.notFound('Project', dto.projectId);
     await this.validateTaskReferences(organizationId, dto.projectId, dto);
 
-    const task = await this.prisma.$transaction(async (tx) => {
-      const key = await this.nextKey(tx, dto.projectId);
-      const created = await tx.task.create({
-        data: {
-          projectId: dto.projectId,
-          repositoryId: dto.repositoryId ?? null,
-          epicId: dto.epicId ?? null,
-          featureId: dto.featureId ?? null,
-          parentTaskId: dto.parentTaskId ?? null,
-          key,
-          title: dto.title,
-          description: dto.description,
-          objective: dto.objective,
-          type: dto.type,
-          priority: dto.priority,
-          riskLevel: dto.riskLevel,
-          acceptanceCriteria: dto.acceptanceCriteria,
-          implementationNotes: dto.implementationNotes,
-          suggestedFiles: dto.suggestedFiles,
-          requiredChecks: dto.requiredChecks as CheckType[],
-          maxAttempts: dto.maxAttempts || project.maxTaskAttempts,
-          assignedAgentId: dto.assignedAgentId ?? null,
-          createdById: createdById ?? null,
-        },
-      });
-
-      if (dto.dependsOnTaskIds.length > 0) {
-        await tx.taskDependency.createMany({
-          data: dto.dependsOnTaskIds.map((dependsOnTaskId) => ({
-            taskId: created.id,
-            dependsOnTaskId,
-          })),
-          skipDuplicates: true,
+    // Retried as a whole: a key collision means a concurrent create took this
+    // sequence number, and the retry re-reads the incremented one.
+    const task = await retryOnUniqueViolation(() =>
+      this.prisma.$transaction(async (tx) => {
+        const key = await this.nextKey(tx, dto.projectId);
+        const created = await tx.task.create({
+          data: {
+            projectId: dto.projectId,
+            repositoryId: dto.repositoryId ?? null,
+            epicId: dto.epicId ?? null,
+            featureId: dto.featureId ?? null,
+            parentTaskId: dto.parentTaskId ?? null,
+            key,
+            title: dto.title,
+            description: dto.description,
+            objective: dto.objective,
+            type: dto.type,
+            priority: dto.priority,
+            riskLevel: dto.riskLevel,
+            acceptanceCriteria: dto.acceptanceCriteria,
+            implementationNotes: dto.implementationNotes,
+            suggestedFiles: dto.suggestedFiles,
+            requiredChecks: dto.requiredChecks as CheckType[],
+            maxAttempts: dto.maxAttempts || project.maxTaskAttempts,
+            assignedAgentId: dto.assignedAgentId ?? null,
+            createdById: createdById ?? null,
+          },
         });
-      }
 
-      return created;
-    });
+        if (dto.dependsOnTaskIds.length > 0) {
+          await tx.taskDependency.createMany({
+            data: dto.dependsOnTaskIds.map((dependsOnTaskId) => ({
+              taskId: created.id,
+              dependsOnTaskId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        return created;
+      }),
+    );
 
     this.events.publish(DomainEventName.TASK_CREATED, {
       taskId: task.id,
@@ -527,7 +535,11 @@ export class TasksService {
     } catch (error) {
       await this.prisma.workflowRun.updateMany({
         where: { id: run.id, status: RunStatus.PENDING },
-        data: { status: RunStatus.FAILED, error: 'Workflow enqueue failed', completedAt: new Date() },
+        data: {
+          status: RunStatus.FAILED,
+          error: 'Workflow enqueue failed',
+          completedAt: new Date(),
+        },
       });
       throw error;
     }
@@ -546,7 +558,10 @@ export class TasksService {
     await Promise.allSettled([
       ...cancelled.workflowRunIds.map((runId) => this.orchestrator.cancel(runId, reason)),
       this.agentRuns.notifyCommittedCancellations(
-        organizationId, cancelled.agentRunIds, reason, true,
+        organizationId,
+        cancelled.agentRunIds,
+        reason,
+        true,
       ),
     ]);
     return { task: cancelled.task, cancelledRuns: cancelled.workflowRunIds };
@@ -678,7 +693,9 @@ export class TasksService {
     if (dto.epicId) {
       add(
         'epicId',
-        this.prisma.epic.count({ where: { id: dto.epicId, projectId, project: { organizationId } } }),
+        this.prisma.epic.count({
+          where: { id: dto.epicId, projectId, project: { organizationId } },
+        }),
       );
     }
     if (dto.featureId) {
@@ -713,9 +730,11 @@ export class TasksService {
       const dependencyIds = [...new Set(dto.dependsOnTaskIds)];
       labels.push('dependsOnTaskIds');
       checks.push(
-        this.prisma.task.count({
-          where: { id: { in: dependencyIds }, projectId, project: { organizationId } },
-        }).then((count) => (count === dependencyIds.length ? 1 : 0)),
+        this.prisma.task
+          .count({
+            where: { id: { in: dependencyIds }, projectId, project: { organizationId } },
+          })
+          .then((count) => (count === dependencyIds.length ? 1 : 0)),
       );
     }
 
@@ -729,7 +748,10 @@ export class TasksService {
     }
   }
 
-  async assertOwned(organizationId: string, id: string): Promise<{ id: string; projectId: string }> {
+  async assertOwned(
+    organizationId: string,
+    id: string,
+  ): Promise<{ id: string; projectId: string }> {
     const task = await this.prisma.task.findFirst({
       where: { id, project: { organizationId } },
       select: { id: true, projectId: true },

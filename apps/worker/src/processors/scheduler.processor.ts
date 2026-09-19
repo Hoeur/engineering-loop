@@ -1,4 +1,5 @@
 import { RunStatus, type ScheduleType, TaskType } from '@engloop/types';
+import { retryOnUniqueViolation } from '@engloop/db';
 import { parseExpression } from 'cron-parser';
 import type { Job } from 'bullmq';
 import type { WorkerContext } from '../context';
@@ -49,27 +50,31 @@ export const createSchedulerProcessor =
     if (!schedule) return { skipped: 'schedule no longer exists' };
     if (!schedule.enabled && !job.data.manual) return { skipped: 'schedule disabled' };
 
-    const task = await worker.prisma.$transaction(async (tx) => {
-      const project = await tx.project.update({
-        where: { id: schedule.projectId },
-        data: { taskSequence: { increment: 1 } },
-        select: { key: true, taskSequence: true },
-      });
+    // Retry the whole transaction: a collision means another fire took this
+    // sequence number, so the retry re-reads the incremented one.
+    const task = await retryOnUniqueViolation(() =>
+      worker.prisma.$transaction(async (tx) => {
+        const project = await tx.project.update({
+          where: { id: schedule.projectId },
+          data: { taskSequence: { increment: 1 } },
+          select: { key: true, taskSequence: true },
+        });
 
-      return tx.task.create({
-        data: {
-          projectId: schedule.projectId,
-          repositoryId: schedule.repositoryId,
-          key: `${project.key}-${String(project.taskSequence)}`,
-          title: `${TITLE_BY_TYPE[schedule.type]} — ${schedule.name}`,
-          objective: `Triggered by schedule "${schedule.name}" (${schedule.cronExpression}).`,
-          description: `Automatically created by the EngLoop scheduler.`,
-          type: TYPE_BY_SCHEDULE[schedule.type],
-          priority: 'MEDIUM',
-          riskLevel: 'LOW',
-        },
-      });
-    });
+        return tx.task.create({
+          data: {
+            projectId: schedule.projectId,
+            repositoryId: schedule.repositoryId,
+            key: `${project.key}-${String(project.taskSequence)}`,
+            title: `${TITLE_BY_TYPE[schedule.type]} — ${schedule.name}`,
+            objective: `Triggered by schedule "${schedule.name}" (${schedule.cronExpression}).`,
+            description: `Automatically created by the EngLoop scheduler.`,
+            type: TYPE_BY_SCHEDULE[schedule.type],
+            priority: 'MEDIUM',
+            riskLevel: 'LOW',
+          },
+        });
+      }),
+    );
 
     let nextRunAt: Date | null = null;
     try {
