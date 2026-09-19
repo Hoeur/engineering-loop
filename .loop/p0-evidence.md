@@ -1,0 +1,148 @@
+# P0 — evidence baseline
+
+**Date:** 2026-09-19 · **Source plan:** `docs/next-plan.md` §4
+**Scope:** git evidence + browser E2E evidence. No production code changed.
+
+---
+
+## 1. Git history — investigated, nothing was lost
+
+`docs/next-plan.md` §4 says: *"Do not initialize a replacement repository that
+loses history."* A `git init` had already been run in this session before that
+document was read, so the first job was establishing whether history existed to
+lose. **It did not.** Four independent checks:
+
+| Check | Result |
+| --- | --- |
+| `git fsck --lost-found` dangling **commits** | **0** — a prior repo would leave commit objects |
+| `.git/objects` created before 16:40 today | **0** of 733 — every object is from this session's init |
+| `git reflog --all` earliest entry | `9d58bc4 commit (initial)` — no prior HEAD |
+| Sibling projects on `E:/Evalley/` | every other project has its own `.git`; this one never did |
+
+The `.idea/vcs.xml` mapping of `$PROJECT_DIR$` as a Git root post-dates the init
+(file mtime 17:03 vs. init 16:45), so it is a reaction to the new repo, not
+evidence of an old one. The only GitHub URL anywhere in the project
+(`Hoeur/chat-gate-frontend`) belongs to a *managed repository* EngLoop was
+operating on, not to EngLoop itself.
+
+**Conclusion:** no authoritative remote exists for EngLoop. This working copy is
+the origin, and `9d58bc4` is legitimately its root commit. P0's recovery step is
+not applicable; its evidence step is satisfied below.
+
+### Git evidence record
+
+```
+branch:   master
+HEAD:     a626289e88675fd6c29e1d38668b396b7deb6fbb
+upstream: none (no remote configured)
+remote:   none
+status:   0 modified/untracked files (clean worktree)
+tracked:  447 files
+```
+
+Excluded from the baseline and verified absent from every commit: `.env`,
+`*.pem`, `node_modules/` (1011M), `apps/worker/workspace/` (719M),
+`apps/web/.next/` (438M).
+
+---
+
+## 2. Browser E2E — ran, with one real gap
+
+### Corrections to `docs/next-plan.md` §1
+
+The document's two stated environment gaps were both partly stale:
+
+- **"Playwright browser not configured"** — Chromium **1234 is installed**. The
+  failure was a path shape: Playwright looked for `chrome-win/`, the install is
+  `chrome-win64/`. Setting `PLAYWRIGHT_CHROMIUM_PATH` (which
+  `playwright.config.ts` already supports) fixed it — 16/16 failures became
+  13 passed / 3 failed on the first run.
+- **"Global `pnpm` fails with EPERM on `C:\Users\YCT_2`"** — not reproduced. The
+  EPERM encountered was on `apps/web/.next/trace`, held by an already-running
+  EngLoop web server (PID 30556 → 33344, self-restarting) listening on **port
+  3001**. No server needed starting; the suite was pointed at the running one.
+
+### Reproducible command
+
+```bash
+cd apps/web
+PLAYWRIGHT_CHROMIUM_PATH="C:/Users/YCT_2/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe" \
+PLAYWRIGHT_SKIP_WEBSERVER=1 \
+PLAYWRIGHT_BASE_URL=http://localhost:3001 \
+../../node_modules/.bin/playwright test
+```
+
+### Result — all six viewports
+
+**80 passed · 13 failed · 3 skipped** (3.1 min), across 1440, 1024, 768, 430,
+390 and 375.
+
+### The 13 failures are one environment gap, not 13 defects
+
+Every failing test needs the **authenticated application shell**. The captured
+page snapshots all show the same thing at every viewport:
+
+```
+heading "Sign in"
+paragraph: Use your EngLoop account to open the control plane.
+```
+
+The suite sets `localStorage['engloop.auth.token'] = 'e2e-session'` in a
+`beforeEach`, but the running server does not accept that as a session, so the
+app renders `/login` instead of the shell. `AUTH_DEV_BYPASS=false` in `.env`;
+that flag is consumed by `packages/config` on the **API** side, so flipping it
+alone may not be the whole fix.
+
+Failures by cause:
+
+| Tests | Viewports | Needs |
+| --- | --- | --- |
+| command palette shortcut | all 6 | authenticated shell |
+| collapses the sidebar | 1440, 1024, 768 | authenticated shell |
+| exposes navigation at every width | 430, 390, 375 | authenticated drawer |
+| empty state when API returns no tasks | 1024 only | — see flakiness below |
+
+### Horizontal overflow — the P0 criterion — passed
+
+All 60 overflow assertions passed (10 routes × 6 viewports), **including 375px**.
+Note this was measured against the login page for unauthenticated routes, so it
+is a real result for what was rendered but **not** proof that the authenticated
+shell is overflow-free.
+
+### Flakiness observed
+
+`/insights/costs` overflow **failed** on the first single-viewport run and
+**passed** in the full run; `states.spec.ts › empty state` failed only at 1024.
+Both are timing-sensitive rather than deterministic. Recorded rather than
+explained away.
+
+---
+
+## 3. P0 acceptance criteria — status
+
+| Criterion | Status |
+| --- | --- |
+| Branch, upstream, remote, HEAD, status captured | **Met** |
+| Repair diff reviewable against a real base revision | **Met** — `9d58bc4` |
+| `pnpm lint` / `typecheck` / `test` via repo commands | **Met** — clean · clean · 409 passing |
+| `pnpm build` | **Not met** — blocked by the `.next/trace` lock (see §2) |
+| `pnpm test:e2e` runs on Windows | **Met**, with the documented env vars |
+| All six viewports pass without uncaught errors | **Not met** — 13 auth-gated failures |
+| No horizontal scrolling | **Met** for rendered pages; unproven for the shell |
+| Worktree clean, repair committed | **Met** — clean at `a626289` |
+
+---
+
+## 4. Open decisions
+
+1. **How should E2E authenticate?** The suite's `localStorage` token is not
+   honoured. Options: a dev-bypass session endpoint, a seeded test user with a
+   real login step in `beforeEach`, or a storage-state fixture. This is a product
+   decision about how the test suite is meant to authenticate, not a bug to
+   guess at.
+2. **`pnpm build` is blocked** by whatever holds `apps/web/.next`. It is a
+   supervised, self-restarting server; stopping it is yours to do. Once stopped,
+   `pnpm build` should be re-run to close that criterion.
+3. **Make the browser path durable** — add `PLAYWRIGHT_CHROMIUM_PATH` to
+   `.env.example`, or normalise on `playwright install`, so the next run does not
+   rediscover this.
