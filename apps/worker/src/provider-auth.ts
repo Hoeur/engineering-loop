@@ -1,5 +1,3 @@
-import type { Env } from '@engloop/config';
-
 /** Where a provider CLI gets its credentials from. */
 export type CliAuthSource = 'api-key' | 'cli-login';
 
@@ -9,24 +7,26 @@ export interface CliAuth {
   env: Record<string, string>;
 }
 
-type ProviderCredentials = Pick<Env, 'OPENAI_API_KEY' | 'ANTHROPIC_API_KEY' | 'CODEX_HOME'>;
-
-const configured = (value: string | undefined): string | undefined => value?.trim() || undefined;
+const configured = (value: string | undefined | null): string | undefined =>
+  value?.trim() || undefined;
 
 /**
- * Codex: a configured OPENAI_API_KEY wins over the `codex login` stored in
+ * Codex: the organization's stored API key wins over the `codex login` kept in
  * CODEX_HOME, so runs bill the API key and a ChatGPT plan's usage limit cannot
  * stop them. `codex exec` reads CODEX_API_KEY ahead of the stored login;
- * OPENAI_API_KEY goes along for CLI builds that predate it. Clear the key to run
- * on the login instead.
+ * OPENAI_API_KEY goes along for CLI builds that predate it.
+ *
+ * `apiKey` is the decrypted per-organization credential (see CredentialResolver),
+ * never a process environment variable. With no stored key the CLI falls back to
+ * its own login.
  */
-export const codexCliAuth = (env: ProviderCredentials): CliAuth => {
-  const apiKey = configured(env.OPENAI_API_KEY);
-  const home = configured(env.CODEX_HOME);
+export const codexCliAuth = (apiKey: string | undefined | null, codexHome?: string): CliAuth => {
+  const key = configured(apiKey);
+  const home = configured(codexHome);
   return {
-    source: apiKey ? 'api-key' : 'cli-login',
+    source: key ? 'api-key' : 'cli-login',
     env: {
-      ...(apiKey ? { CODEX_API_KEY: apiKey, OPENAI_API_KEY: apiKey } : {}),
+      ...(key ? { CODEX_API_KEY: key, OPENAI_API_KEY: key } : {}),
       ...(home ? { CODEX_HOME: home } : {}),
     },
   };
@@ -34,12 +34,13 @@ export const codexCliAuth = (env: ProviderCredentials): CliAuth => {
 
 /**
  * Claude Code: headless (`-p`) runs always use ANTHROPIC_API_KEY when it is set,
- * ahead of the `claude` subscription login. Clear the key to run on the login.
+ * ahead of the `claude` subscription login. With no stored key the CLI falls back
+ * to that login.
  */
-export const claudeCodeCliAuth = (env: ProviderCredentials): CliAuth => {
-  const apiKey = configured(env.ANTHROPIC_API_KEY);
+export const claudeCodeCliAuth = (apiKey: string | undefined | null): CliAuth => {
+  const key = configured(apiKey);
   return {
-    source: apiKey ? 'api-key' : 'cli-login',
-    env: apiKey ? { ANTHROPIC_API_KEY: apiKey } : {},
+    source: key ? 'api-key' : 'cli-login',
+    env: key ? { ANTHROPIC_API_KEY: key } : {},
   };
 };

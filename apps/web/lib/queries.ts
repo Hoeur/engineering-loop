@@ -20,6 +20,7 @@ import type {
   AuditLogSummary,
   CostSummary,
   CreateTaskInput,
+  CurrentUser,
   DashboardOverview,
   DeliveryMetrics,
   GitHubInstallationSummary,
@@ -36,6 +37,8 @@ import type {
   TaskDetail,
   TaskSummary,
   TestRunSummary,
+  UpdateAgentInput,
+  UpsertProviderInput,
   UsageSummary,
   WorkflowRunDetail,
   WorkflowRunSummary,
@@ -58,6 +61,7 @@ export const queryKeys = {
   agentTeam: (projectId?: string) => ['agents', 'team', projectId ?? 'org'] as const,
   agentPerformance: ['agents', 'performance'] as const,
   providers: ['agent-providers'] as const,
+  currentUser: ['auth', 'me'] as const,
   workflows: ['workflows'] as const,
   workflowRuns: (params?: unknown) => ['workflow-runs', params ?? {}] as const,
   workflowRun: (id: string) => ['workflow-runs', id] as const,
@@ -302,6 +306,24 @@ export const useAgents = (params?: { projectId?: string; role?: string }) =>
     queryFn: () => unwrap(api.get<{ items: AgentSummary[] }>('/agents', { query: params })),
   });
 
+/**
+ * Updates one agent's execution limits.
+ *
+ * These are what actually bound a run: the worker resolves the agent row's
+ * maxTokens/maxCostUsd/timeoutMs and falls back to the process-wide defaults
+ * only for an agent that sets none.
+ */
+export const useUpdateAgent = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateAgentInput & { id: string }) =>
+      unwrap(api.patch<AgentSummary>(`/agents/${id}`, body)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['agents'] });
+    },
+  });
+};
+
 export const useAgentTeam = (projectId?: string) =>
   useQuery({
     queryKey: queryKeys.agentTeam(projectId),
@@ -322,6 +344,32 @@ export const useProviders = () =>
     queryKey: queryKeys.providers,
     queryFn: () => unwrap(api.get<{ items: AgentProviderSummary[] }>('/agent-providers')),
   });
+
+export const useCurrentUser = () =>
+  useQuery({
+    queryKey: queryKeys.currentUser,
+    queryFn: () => unwrap(api.get<CurrentUser>('/auth/me')),
+  });
+
+/**
+ * Writes a provider, including its API key.
+ *
+ * The key travels once, on the way in: the response carries a redacted preview
+ * and never the value, so nothing here is worth caching.
+ */
+export const useUpsertProvider = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpsertProviderInput) =>
+      unwrap(api.post<AgentProviderSummary & { credentialPreview: string | null }>(
+        '/agent-providers',
+        body,
+      )),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.providers });
+    },
+  });
+};
 
 export const useAgentRuns = (params?: {
   taskId?: string;

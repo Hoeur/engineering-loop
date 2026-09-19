@@ -1,4 +1,4 @@
-import { getEnv, type Env } from '@engloop/config';
+import { getEnv, SecretCipher, type Env } from '@engloop/config';
 import { createLogger, type EngLoopLogger } from '@engloop/logger';
 import { getPrismaClient, type PrismaClient } from '@engloop/db';
 import {
@@ -17,7 +17,8 @@ import { ReviewEngine } from './services/review-engine';
 import { GitManager } from './services/git-manager';
 import { PlanMaterializer } from './services/plan-materializer';
 import { UsageRecorder } from './services/usage-recorder';
-import { claudeCodeCliAuth, codexCliAuth, type CliAuthSource } from './provider-auth';
+import { CredentialResolver } from './services/credential-resolver';
+import { ProviderCredentialStore } from './services/provider-credential-store';
 
 export interface WorkerContext {
   env: Env;
@@ -35,8 +36,10 @@ export interface WorkerContext {
   reviews: ReviewEngine;
   gitManager: GitManager;
   plans: PlanMaterializer;
-  /** Where each CLI provider gets its credentials: a configured API key or its own login. */
-  providerAuth: Record<string, CliAuthSource>;
+  /** Decrypts each organization's UI-configured provider keys. */
+  credentials: CredentialResolver;
+  /** Holds the key for an in-flight spawn; see ProviderCredentialStore. */
+  credentialStore: ProviderCredentialStore;
 }
 
 /**
@@ -81,8 +84,12 @@ export const createWorkerContext = (): WorkerContext => {
       : undefined;
 
   const registry = new AgentProviderRegistry(logger);
-  const codexAuth = codexCliAuth(env);
-  const claudeCodeAuth = claudeCodeCliAuth(env);
+  const credentialStore = new ProviderCredentialStore();
+  const credentials = new CredentialResolver({
+    prisma,
+    cipher: new SecretCipher(env.SECRETS_ENCRYPTION_KEY),
+    logger,
+  });
 
   if (env.AGENT_ENABLE_MOCK) {
     registry.register(
@@ -100,7 +107,8 @@ export const createWorkerContext = (): WorkerContext => {
         model: env.CODEX_MODEL,
         runner,
         logger,
-        env: (): Record<string, string> => ({ ...codexAuth.env }),
+        // Read at spawn time: the executor primes the running organization's key.
+        env: (): Record<string, string> => credentialStore.env('codex'),
       }),
     )
     .register(
@@ -109,14 +117,24 @@ export const createWorkerContext = (): WorkerContext => {
         model: env.CLAUDE_CODE_MODEL,
         runner,
         logger,
-        env: (): Record<string, string> => ({ ...claudeCodeAuth.env }),
+        env: (): Record<string, string> => credentialStore.env('claude-code'),
       }),
     );
 
   const audit = new AuditWriter(prisma, logger);
   const usage = new UsageRecorder(prisma);
   const contextBuilder = new ContextBuilder(prisma, env);
-  const agents = new AgentExecutor({ prisma, registry, logger, env, audit, usage, contextBuilder });
+  const agents = new AgentExecutor({
+    prisma,
+    registry,
+    logger,
+    env,
+    audit,
+    usage,
+    contextBuilder,
+    credentials,
+    credentialStore,
+  });
   const tests = new TestRunner({ prisma, runner, logger, env, audit });
   const reviews = new ReviewEngine({ prisma, logger });
   const gitManager = new GitManager({ prisma, git, worktrees, github, logger, env, audit });
@@ -138,6 +156,7 @@ export const createWorkerContext = (): WorkerContext => {
     reviews,
     gitManager,
     plans,
-    providerAuth: { codex: codexAuth.source, 'claude-code': claudeCodeAuth.source },
+    credentials,
+    credentialStore,
   };
 };

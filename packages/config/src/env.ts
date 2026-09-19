@@ -84,14 +84,14 @@ export const envSchema = z
     AGENT_TOKEN_BUDGET: int(200_000),
     AGENT_COST_BUDGET_USD: z.coerce.number().default(5),
 
+    // Non-secret CLI wiring only. Provider API keys are configured in the UI and
+    // stored encrypted per organization; a provider without one runs on the CLI's
+    // own login (`codex login` / `claude`).
     CODEX_CLI_PATH: z.string().default('codex'),
     CODEX_HOME: z.string().optional(),
     CODEX_MODEL: z.string().default('gpt-6-astra'),
-    OPENAI_API_KEY: z.string().optional(),
     CLAUDE_CODE_CLI_PATH: z.string().default('claude'),
     CLAUDE_CODE_MODEL: z.string().default('claude-opus-5'),
-    ANTHROPIC_API_KEY: z.string().optional(),
-    GEMINI_API_KEY: z.string().optional(),
 
     WORKSPACE_ROOT: z.string().default('./workspace'),
     GIT_AUTHOR_NAME: z.string().default('EngLoop Agent'),

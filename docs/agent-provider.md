@@ -69,19 +69,33 @@ On Windows, point `CLAUDE_CODE_CLI_PATH` at the native `claude.exe` (for example
 `C:/Users/<you>/.local/bin/claude.exe`): the worker never uses a shell, so the npm
 `claude.cmd` shim cannot be started.
 
-## Credentials: API key first, CLI login second
+## Credentials: stored key first, CLI login second
 
-The worker decides what each CLI bills (`apps/worker/src/provider-auth.ts`):
+Provider API keys are configured in the UI (**Providers** → *Set key*, owners and
+administrators only) and stored per organization as AES-256-GCM ciphertext on
+`agent_providers`. The process environment is never consulted for a key.
 
-| Provider    | Key in `.env`       | Handed to the CLI as                 | Without a key                                    |
-| ----------- | ------------------- | ------------------------------------ | ------------------------------------------------ |
-| Codex       | `OPENAI_API_KEY`    | `CODEX_API_KEY` (+ `OPENAI_API_KEY`) | the `codex login` in `CODEX_HOME` (ChatGPT plan) |
-| Claude Code | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`                  | the `claude` login (Claude subscription)         |
+| Provider    | Handed to the CLI as                 | Without a stored key                             |
+| ----------- | ------------------------------------ | ------------------------------------------------ |
+| Codex       | `CODEX_API_KEY` (+ `OPENAI_API_KEY`) | the `codex login` in `CODEX_HOME` (ChatGPT plan) |
+| Claude Code | `ANTHROPIC_API_KEY`                  | the `claude` login (Claude subscription)         |
 
 `codex exec` reads `CODEX_API_KEY` ahead of any stored login, and headless Claude
-Code always uses `ANTHROPIC_API_KEY` when it is set, so a configured key wins and a
-subscription's usage limit cannot stop a run. Clear the key to fall back to the
-login. The worker logs the choice at startup (`worker.started` → `providerAuth`).
+Code always uses `ANTHROPIC_API_KEY` when it is set, so a stored key wins and a
+subscription's usage limit cannot stop a run. Clear the key from the UI to fall
+back to the login.
+
+At run time `AgentExecutor` resolves the key through `CredentialResolver`
+(`apps/worker/src/services/credential-resolver.ts`), which decrypts it with
+`SECRETS_ENCRYPTION_KEY` and caches it briefly. The decrypted value is primed into
+`ProviderCredentialStore` only for the spawn itself, because the SDK reads its
+`env` callback synchronously, and is cleared in a `finally`. A credential that
+cannot be decrypted fails the run with `AGENT_PROVIDER_UNAVAILABLE` rather than
+silently downgrading to the CLI login.
+
+Plaintext is never returned by the API: a write echoes a redacted preview
+(`sk-••••••••mnop`) once, and reads report only `hasCredential` and
+`credentialSource`.
 
 ## Never trust the output
 
@@ -100,7 +114,7 @@ Invalid output becomes an `AGENT_OUTPUT_INVALID` failure. It never becomes state
 1. Implement `CodingAgentProvider` (or extend `CliCodingAgentProvider`).
 2. Declare `capabilities.roles`.
 3. Register it in `apps/worker/src/context.ts`.
-4. Add the provider kind to the real-bootstrap allowlist and configure its credential in the worker process environment.
+4. Add the provider kind to the real-bootstrap allowlist, then set its API key on the Providers screen.
 5. Assign it to a role on the Agent Team screen.
 
 No other file changes.
@@ -119,15 +133,17 @@ Real mode does not seed an agent team. Configure the organization default with
 `pnpm bootstrap:real`; optional agent rows can then override individual roles.
 
 ```bash
-# .env
+# .env — non-secret CLI wiring only
 AGENT_DEFAULT_PROVIDER=codex
 CODEX_CLI_PATH=/absolute/path/to/codex
 CODEX_MODEL=gpt-6-astra
-OPENAI_API_KEY=sk-...                # billed per token; empty = the codex login
 COMMAND_ALLOWLIST=...,codex           # the CLI must be allowlisted to be spawned
 
 pnpm bootstrap:real                  # upserts the real organization/provider
 ```
+
+Then set the API key on the **Providers** screen. Leave it unset to bill the
+`codex login` instead.
 
 `GET /health` on the worker reports each runtime adapter. Resolution fails
 closed if the configured key is absent or cannot serve the role; it never

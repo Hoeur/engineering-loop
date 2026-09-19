@@ -1,7 +1,7 @@
 import { AGENT_CONTEXT_FILES, MAX_CONTEXT_FILE_BYTES, type Env } from '@engloop/config';
 import { collectRepositoryContext } from '@engloop/git';
 import type { AgentRole } from '@engloop/types';
-import type { PrismaClient } from '@engloop/db';
+import { decimalToNumber, type PrismaClient } from '@engloop/db';
 import type { AgentTaskContext } from '@engloop/schemas';
 
 export interface BuildContextInput {
@@ -127,6 +127,8 @@ export class ContextBuilder {
     agentId: string | null;
     model: string | null;
     agentTimeoutMs?: number;
+    agentMaxTokens?: number;
+    agentMaxCostUsd?: number;
   }> {
     const project = await this.prisma.project.findUniqueOrThrow({
       where: { id: projectId },
@@ -180,7 +182,10 @@ export class ContextBuilder {
         providerKey: agent.provider.key,
         agentId: agent.id,
         model: agent.model ?? agent.provider.defaultModel,
+        // The agent row's own limits win over the process-wide defaults.
         agentTimeoutMs: agent.timeoutMs,
+        agentMaxTokens: agent.maxTokens,
+        agentMaxCostUsd: decimalToNumber(agent.maxCostUsd),
       };
     }
 

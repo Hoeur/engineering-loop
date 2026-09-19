@@ -8,11 +8,18 @@ import { DataTable, type Column } from '@/components/common/data-table';
 import { EmptyState, QueryBoundary } from '@/components/common/states';
 import { AgentBadge, ProviderBadge } from '@/components/common/badges';
 import { formatCost, formatDuration, formatTokens } from '@/lib/format';
-import { useAgents } from '@/lib/queries';
+import { useAgents, useCurrentUser } from '@/lib/queries';
+import { AgentBudgetDialog } from '@/components/agents/agent-budget-dialog';
 import type { AgentSummary } from '@/lib/types';
+
+/** Mirrors the API's own gate, which is what actually enforces this. */
+const canManageAgents = (role: string | undefined): boolean =>
+  role === 'OWNER' || role === 'ADMIN';
 
 export default function AgentConfigurationsPage(): React.JSX.Element {
   const agents = useAgents();
+  const currentUser = useCurrentUser();
+  const isAdmin = canManageAgents(currentUser.data?.role);
 
   const columns: Column<AgentSummary>[] = [
     {
@@ -63,13 +70,22 @@ export default function AgentConfigurationsPage(): React.JSX.Element {
         </Badge>
       ),
     },
+    ...(isAdmin
+      ? [
+          {
+            id: 'actions',
+            header: '',
+            cell: (agent: AgentSummary) => <AgentBudgetDialog agent={agent} />,
+          },
+        ]
+      : []),
   ];
 
   return (
     <>
       <PageHeader
         title="Configurations"
-        description="Per-agent execution limits: token budget, cost budget, timeout, retries, permission level and command allowlist."
+        description="Per-agent execution limits: token budget, cost budget, timeout, retries, permission level and command allowlist. An agent's own limits bound its runs; unset ones fall back to the process defaults."
       />
 
       <QueryBoundary
