@@ -125,11 +125,56 @@ explained away.
 | Branch, upstream, remote, HEAD, status captured | **Met** |
 | Repair diff reviewable against a real base revision | **Met** — `9d58bc4` |
 | `pnpm lint` / `typecheck` / `test` via repo commands | **Met** — clean · clean · 409 passing |
-| `pnpm build` | **Not met** — blocked by the `.next/trace` lock (see §2) |
+| `pnpm build` | **Met** — see §5 |
 | `pnpm test:e2e` runs on Windows | **Met**, with the documented env vars |
-| All six viewports pass without uncaught errors | **Not met** — 13 auth-gated failures |
+| All six viewports pass without uncaught errors | **Open** — awaiting API restart, see §5 |
 | No horizontal scrolling | **Met** for rendered pages; unproven for the shell |
-| Worktree clean, repair committed | **Met** — clean at `a626289` |
+| Worktree clean, repair committed | **Met** — clean at `db4b33a` |
+
+---
+
+## 5. Update — 2026-09-19, after the re-index
+
+### `pnpm build` now passes
+
+The `.next` lock cleared on its own (the supervised web server recycled). A full
+`pnpm build` ran to completion: all 11 packages, then api, worker and web. Next.js
+emitted the full route table including `/quality/ui-qa`. The worktree stayed clean
+— `apps/web/.next` is git-ignored.
+
+**Caveat worth recording:** running `pnpm build` rewrote `.next` underneath the
+running dev server, which returned HTTP 500 for roughly a minute before recovering
+on its own. Building while that server runs is disruptive but self-healing.
+
+### E2E re-run — blocked, not yet re-run
+
+Root cause of the 13 failures was established (§2 above and
+`.loop/plan-delivery.md`): `AuthGate` accepts any truthy token, so `e2e-session`
+passes the gate; the API's 401 then clears it and redirects to `/login`. Verified
+by direct request, not inferred.
+
+Fix applied to `.env`: `AUTH_DEV_BYPASS=true` (backup at `.env.bak-p0`, git-ignored).
+Preconditions verified — `founder@evalley.dev` exists with 1 organization
+membership, so `resolveDevUser()` will resolve rather than return null.
+
+**The API has not come back up.** It was last seen as PID 24724 serving 401s;
+after the restart request it stopped listening on port 4000 and had not returned
+after 3 minutes of polling. The six-viewport re-run needs it, because the failing
+tests are exactly the ones that call the API.
+
+**To finish P0:** bring the API up on port 4000, then run
+
+```bash
+cd apps/web
+PLAYWRIGHT_CHROMIUM_PATH="C:/Users/YCT_2/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe" \
+PLAYWRIGHT_SKIP_WEBSERVER=1 \
+PLAYWRIGHT_BASE_URL=http://localhost:3001 \
+../../node_modules/.bin/playwright test
+```
+
+Expect the 13 auth-gated failures to clear. The `/insights/costs` overflow and
+`states.spec.ts › empty state` flakiness is independent of auth and may still
+appear.
 
 ---
 
