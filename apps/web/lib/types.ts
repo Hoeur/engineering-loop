@@ -572,6 +572,14 @@ export interface CreateTaskInput {
   maxAttempts?: number;
 }
 
+/** Body of `POST /tasks/:id/run`; planning is enabled by default. */
+export interface RunTaskInput {
+  taskId: string;
+  workflowKey: string;
+  skipPlanning: boolean;
+  force: boolean;
+}
+
 export interface Paginated<T> {
   items: T[];
   meta: { pagination?: { page: number; pageSize: number; total: number; totalPages: number } };

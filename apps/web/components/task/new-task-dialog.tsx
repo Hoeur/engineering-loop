@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus } from 'lucide-react';
-import { CheckType, Priority, RiskLevel, TaskType } from '@engloop/types';
+import { AlertTriangle, Loader2, Plus } from 'lucide-react';
+import { ApiErrorCode, CheckType, Priority, RiskLevel, TaskType } from '@engloop/types';
 import {
   Button,
   Dialog,
@@ -23,8 +23,8 @@ import {
 } from '@engloop/ui';
 import { ApiError } from '@/lib/api-client';
 import { titleCase } from '@/lib/format';
-import { useCreateTask } from '@/lib/queries';
-import type { CreateTaskInput, RepositorySummary } from '@/lib/types';
+import { useCreateTask, useRunTask } from '@/lib/queries';
+import type { CreateTaskInput, RepositorySummary, TaskSummary } from '@/lib/types';
 
 /** Checks a task can require; with none selected EngLoop runs its default set. */
 const CHECK_OPTIONS: CheckType[] = [
@@ -104,8 +104,8 @@ export const buildCreateTaskInput = (projectId: string, form: NewTaskForm): Crea
   maxAttempts: Number(form.maxAttempts),
 });
 
-const errorMessage = (error: unknown): string =>
-  error instanceof ApiError || error instanceof Error ? error.message : 'Could not create the task';
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof ApiError || error instanceof Error ? error.message : fallback;
 
 interface EnumSelectProps<T extends string> {
   id: string;
@@ -150,9 +150,29 @@ export const NewTaskDialog = ({
 }: NewTaskDialogProps): React.JSX.Element => {
   const router = useRouter();
   const createTask = useCreateTask();
+  const runTask = useRunTask();
   const [open, setOpen] = React.useState(false);
   const [form, setForm] = React.useState<NewTaskForm>(() => emptyNewTaskForm(repositories));
   const [validation, setValidation] = React.useState<string | null>(null);
+  const [createdTask, setCreatedTask] = React.useState<TaskSummary | null>(null);
+  const [startError, setStartError] = React.useState<string | null>(null);
+  const submitLockedRef = React.useRef(false);
+  const startLockedRef = React.useRef(false);
+
+  const resetDialog = (): void => {
+    submitLockedRef.current = false;
+    startLockedRef.current = false;
+    setCreatedTask(null);
+    setStartError(null);
+    setValidation(null);
+    setForm(emptyNewTaskForm(repositories));
+  };
+
+  const openCreatedTask = (task: TaskSummary): void => {
+    setOpen(false);
+    resetDialog();
+    router.push(`/engineering/tasks/${task.id}`);
+  };
 
   const update = <K extends keyof NewTaskForm>(key: K, value: NewTaskForm[K]): void => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -167,23 +187,72 @@ export const NewTaskDialog = ({
     }));
   };
 
-  // `mutate`, not `mutateAsync`: an API error is shown inline instead of escaping as an
-  // unhandled rejection (which Next.js dev turns into a full-page overlay).
+  const startWorkflow = (task: TaskSummary): void => {
+    if (startLockedRef.current) return;
+    startLockedRef.current = true;
+    setStartError(null);
+    runTask.mutate(
+      {
+        taskId: task.id,
+        workflowKey: 'engineering-task',
+        skipPlanning: false,
+        force: false,
+      },
+      {
+        onSuccess: (run) => {
+          setOpen(false);
+          resetDialog();
+          router.push(`/engineering/runs/${run.id}`);
+        },
+        onError: (error) => {
+          startLockedRef.current = false;
+          const existingRunId =
+            error instanceof ApiError && error.code === ApiErrorCode.TASK_ALREADY_RUNNING
+              ? error.details?.['workflowRunId']
+              : null;
+          if (typeof existingRunId === 'string' && existingRunId.length > 0) {
+            setOpen(false);
+            resetDialog();
+            router.push(`/engineering/runs/${existingRunId}`);
+            return;
+          }
+          setStartError(errorMessage(error, 'Could not start the workflow'));
+        },
+      },
+    );
+  };
+
   const submit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    if (submitLockedRef.current || createdTask) return;
     const problem = validateNewTask(form);
     setValidation(problem);
     if (problem) return;
+    submitLockedRef.current = true;
     createTask.mutate(buildCreateTaskInput(projectId, form), {
       onSuccess: (task) => {
-        setOpen(false);
-        setForm(emptyNewTaskForm(repositories));
-        router.push(`/engineering/tasks/${task.id}`);
+        submitLockedRef.current = false;
+        setCreatedTask(task);
+        startWorkflow(task);
+      },
+      onError: () => {
+        submitLockedRef.current = false;
       },
     });
   };
 
   const repositoryName = repositories.find((entry) => entry.id === form.repositoryId)?.name;
+  const isPending = createTask.isPending || runTask.isPending;
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    if (nextOpen) {
+      setOpen(true);
+      return;
+    }
+    if (isPending || submitLockedRef.current || startLockedRef.current) return;
+    setOpen(false);
+    resetDialog();
+  };
 
   return (
     <>
@@ -191,165 +260,221 @@ export const NewTaskDialog = ({
         <Plus /> New task
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>New task</DialogTitle>
             <DialogDescription>
-              Describe the change. The task starts in the backlog; open it and press Run to start
-              the agents.
+              Describe the change. EngLoop creates the task, starts the full workflow with planning,
+              and opens the live run.
             </DialogDescription>
           </DialogHeader>
 
           <form className="space-y-4" onSubmit={submit} noValidate>
-            <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-              {repositories.length > 1 ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor="new-task-repository">Repository</Label>
-                  <Select
-                    value={form.repositoryId}
-                    onValueChange={(value) => update('repositoryId', value)}
-                  >
-                    <SelectTrigger id="new-task-repository" aria-label="Repository">
-                      <SelectValue placeholder="Choose a repository" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {repositories.map((repository) => (
-                        <SelectItem key={repository.id} value={repository.id}>
-                          {repository.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {createdTask && startError ? (
+              <div
+                role="alert"
+                className="space-y-3 rounded-md border border-danger/25 bg-danger/5 p-4"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      Task created, but the workflow did not start.
+                    </p>
+                    <p className="text-sm text-muted-foreground">{startError}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Retry starting this task or open it to inspect and start it manually. EngLoop
+                      will not create another task.
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {repositoryName
-                    ? `Repository: ${repositoryName}`
-                    : 'No repository is connected, so agents will have no code to work on.'}
-                </p>
-              )}
-
-              <div className="space-y-1.5">
-                <Label htmlFor="new-task-title">Title</Label>
-                <Input
-                  id="new-task-title"
-                  value={form.title}
-                  maxLength={200}
-                  placeholder="Health check: make lint and typecheck pass on main"
-                  onChange={(event) => update('title', event.target.value)}
-                />
               </div>
+            ) : (
+              <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+                {repositories.length > 1 ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-task-repository">Repository</Label>
+                    <Select
+                      value={form.repositoryId}
+                      onValueChange={(value) => update('repositoryId', value)}
+                    >
+                      <SelectTrigger id="new-task-repository" aria-label="Repository">
+                        <SelectValue placeholder="Choose a repository" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {repositories.map((repository) => (
+                          <SelectItem key={repository.id} value={repository.id}>
+                            {repository.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {repositoryName
+                      ? `Repository: ${repositoryName}`
+                      : 'No repository is connected, so agents will have no code to work on.'}
+                  </p>
+                )}
 
-              <div className="space-y-1.5">
-                <Label htmlFor="new-task-objective">Objective</Label>
-                <Input
-                  id="new-task-objective"
-                  value={form.objective}
-                  maxLength={4000}
-                  placeholder="The outcome in one sentence"
-                  onChange={(event) => update('objective', event.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="new-task-description">Description</Label>
-                <Textarea
-                  id="new-task-description"
-                  rows={5}
-                  value={form.description}
-                  maxLength={20000}
-                  placeholder="What to do, what to leave alone, anything the agents should know"
-                  onChange={(event) => update('description', event.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <EnumSelect
-                  id="new-task-type"
-                  label="Type"
-                  value={form.type}
-                  options={Object.values(TaskType)}
-                  onChange={(value) => update('type', value)}
-                />
-                <EnumSelect
-                  id="new-task-priority"
-                  label="Priority"
-                  value={form.priority}
-                  options={Object.values(Priority)}
-                  onChange={(value) => update('priority', value)}
-                />
-                <EnumSelect
-                  id="new-task-risk"
-                  label="Risk"
-                  value={form.riskLevel}
-                  options={Object.values(RiskLevel)}
-                  onChange={(value) => update('riskLevel', value)}
-                />
                 <div className="space-y-1.5">
-                  <Label htmlFor="new-task-attempts">Max attempts</Label>
+                  <Label htmlFor="new-task-title">Title</Label>
                   <Input
-                    id="new-task-attempts"
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={form.maxAttempts}
-                    onChange={(event) => update('maxAttempts', event.target.value)}
+                    id="new-task-title"
+                    value={form.title}
+                    maxLength={200}
+                    placeholder="Health check: make lint and typecheck pass on main"
+                    onChange={(event) => update('title', event.target.value)}
                   />
                 </div>
-              </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="new-task-criteria">Acceptance criteria</Label>
-                <Textarea
-                  id="new-task-criteria"
-                  rows={4}
-                  value={form.acceptanceCriteria}
-                  placeholder={'One per line, e.g.\n`npm run lint` exits 0'}
-                  onChange={(event) => update('acceptanceCriteria', event.target.value)}
-                />
-              </div>
-
-              <fieldset className="space-y-1.5">
-                <legend className="text-xs font-medium">Required checks</legend>
-                <div className="flex flex-wrap gap-x-4 gap-y-2">
-                  {CHECK_OPTIONS.map((check) => (
-                    <label key={check} className="flex items-center gap-1.5 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-primary"
-                        checked={form.requiredChecks.includes(check)}
-                        onChange={() => toggleCheck(check)}
-                      />
-                      {optionLabel(check)}
-                    </label>
-                  ))}
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-task-objective">Objective</Label>
+                  <Input
+                    id="new-task-objective"
+                    value={form.objective}
+                    maxLength={4000}
+                    placeholder="The outcome in one sentence"
+                    onChange={(event) => update('objective', event.target.value)}
+                  />
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  None selected: EngLoop runs its default checks.
-                </p>
-              </fieldset>
-            </div>
 
-            {validation ? <p className="text-sm text-danger">{validation}</p> : null}
-            {createTask.isError ? (
-              <p className="text-sm text-danger">{errorMessage(createTask.error)}</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-task-description">Description</Label>
+                  <Textarea
+                    id="new-task-description"
+                    rows={5}
+                    value={form.description}
+                    maxLength={20000}
+                    placeholder="What to do, what to leave alone, anything the agents should know"
+                    onChange={(event) => update('description', event.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <EnumSelect
+                    id="new-task-type"
+                    label="Type"
+                    value={form.type}
+                    options={Object.values(TaskType)}
+                    onChange={(value) => update('type', value)}
+                  />
+                  <EnumSelect
+                    id="new-task-priority"
+                    label="Priority"
+                    value={form.priority}
+                    options={Object.values(Priority)}
+                    onChange={(value) => update('priority', value)}
+                  />
+                  <EnumSelect
+                    id="new-task-risk"
+                    label="Risk"
+                    value={form.riskLevel}
+                    options={Object.values(RiskLevel)}
+                    onChange={(value) => update('riskLevel', value)}
+                  />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-task-attempts">Max attempts</Label>
+                    <Input
+                      id="new-task-attempts"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={form.maxAttempts}
+                      onChange={(event) => update('maxAttempts', event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-task-criteria">Acceptance criteria</Label>
+                  <Textarea
+                    id="new-task-criteria"
+                    rows={4}
+                    value={form.acceptanceCriteria}
+                    placeholder={'One per line, e.g.\n`npm run lint` exits 0'}
+                    onChange={(event) => update('acceptanceCriteria', event.target.value)}
+                  />
+                </div>
+
+                <fieldset className="space-y-1.5">
+                  <legend className="text-xs font-medium">Required checks</legend>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    {CHECK_OPTIONS.map((check) => (
+                      <label key={check} className="flex items-center gap-1.5 text-sm">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={form.requiredChecks.includes(check)}
+                          onChange={() => toggleCheck(check)}
+                        />
+                        {optionLabel(check)}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    None selected: EngLoop runs its default checks.
+                  </p>
+                </fieldset>
+              </div>
+            )}
+
+            {!createdTask && validation ? (
+              <p role="alert" className="text-sm text-danger">
+                {validation}
+              </p>
+            ) : null}
+            {!createdTask && createTask.isError ? (
+              <p role="alert" className="text-sm text-danger">
+                {errorMessage(createTask.error, 'Could not create the task')}
+              </p>
             ) : null}
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={createTask.isPending}
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={createTask.isPending}>
-                {createTask.isPending ? <Loader2 className="animate-spin" /> : null}
-                Create task
-              </Button>
+              {createdTask && startError ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={runTask.isPending}
+                    onClick={() => openCreatedTask(createdTask)}
+                  >
+                    Open created task
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={runTask.isPending}
+                    onClick={() => startWorkflow(createdTask)}
+                  >
+                    {runTask.isPending ? <Loader2 className="animate-spin" /> : null}
+                    Retry workflow start
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => handleOpenChange(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" size="sm" disabled={isPending}>
+                    {isPending ? <Loader2 className="animate-spin" /> : null}
+                    {createTask.isPending
+                      ? 'Creating task…'
+                      : runTask.isPending
+                        ? 'Starting workflow…'
+                        : 'Create and start'}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>

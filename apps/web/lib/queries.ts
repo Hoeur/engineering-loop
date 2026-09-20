@@ -33,6 +33,7 @@ import type {
   RepositorySummary,
   ReviewFindingSummary,
   ReviewRunSummary,
+  RunTaskInput,
   ScheduleSummary,
   TaskDetail,
   TaskSummary,
@@ -253,6 +254,22 @@ export const useCreateTask = () => {
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.board(task.projectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.project(task.projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.overview });
+    },
+  });
+};
+
+export const useRunTask = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, ...body }: RunTaskInput) =>
+      unwrap(api.post<WorkflowRunSummary>(`/tasks/${taskId}/run`, body)),
+    onSuccess: (run, variables) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.task(variables.taskId) });
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['board'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workflowRun(run.id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.overview });
     },
   });

@@ -32,8 +32,8 @@ flowchart LR
   REDIS -->|jobs| WORKER
   WORKER --> PG
   WORKER -->|CodingAgentProvider| MOCK
-  WORKER -.not wired in MVP.-> CODEX
-  WORKER -.not wired in MVP.-> CLAUDE
+  WORKER -->|Codex CLI adapter| CODEX
+  WORKER -->|Claude Code CLI adapter| CLAUDE
   WORKER -->|git + commands| WT[(workspace/worktrees)]
 ```
 
@@ -84,7 +84,10 @@ sequenceDiagram
   participant K as Worker
   participant DB as PostgreSQL
 
-  U->>W: Start ENG-101
+  U->>W: Create and start engineering task
+  W->>A: POST /tasks
+  A->>DB: create Task
+  A-->>W: 201 Task
   W->>A: POST /tasks/:id/run
   A->>DB: create WorkflowRun (idempotencyKey)
   A->>Q: enqueue workflow.start (jobId = key)
@@ -99,6 +102,59 @@ sequenceDiagram
   K->>DB: run SUCCEEDED / WAITING_FOR_HUMAN / FAILED
   W->>A: GET /workflow-runs/:id (poll)
 ```
+
+The browser uses TanStack Query for server state. Task, board, dashboard, and run queries poll at
+configured intervals; the run detail currently polls every five seconds. No SSE or WebSocket
+transport is present.
+
+## Current engineering workflow
+
+```mermaid
+flowchart LR
+  A[Repository analysis + early worktree provision<br/>definition metadata: PLANNER<br/>handler invokes: ARCHITECT] --> P[Planner]
+  P --> M[Persist child tasks + dependencies]
+  M --> W[CREATE_WORKTREE records the existing lease]
+  W --> I[Implementer]
+  I --> Q[Deterministic command checks]
+  Q -->|pass| U{UI QA enabled?}
+  U -->|yes| UI[Optional UI_REVIEWER]
+  U -->|no| R[Code review<br/>REVIEW or FINAL_REVIEW]
+  UI --> R
+  Q -->|fail| F[Bounded fix loop]
+  R -->|changes requested| F
+  F --> RT[Deterministic RETEST]
+  RT -->|pass| R
+  RT -->|fail| F
+  R -->|approved| PR[Optional prepare PR]
+  PR --> Z[Finalize from database evidence]
+```
+
+The workflow engine, rather than a supervisor agent, makes routing decisions. The planner's child
+tasks and `TaskDependency` rows are durable planning artifacts, but this workflow does not yet
+execute them as a child DAG. `RUN_TESTS` is deterministic system verification, not a `QA` role
+agent. The repository-analysis step is declared with `PLANNER` metadata in the shared definition,
+while its worker handler currently invokes `ARCHITECT`; the diagram records that source-level
+discrepancy rather than choosing one label. That handler also provisions the isolated worktree
+before planning; the later `CREATE_WORKTREE` handler records/reuses the lease. UI QA is optional,
+and the router selects `REVIEW` or `FINAL_REVIEW` according to the remaining review budget. A
+documentation role exists in the enum but is not a workflow step.
+
+## Provider implementation
+
+`apps/worker/src/context.ts` registers mock, Codex, and Claude Code adapters. Codex decodes JSONL,
+sessions, usage, and a structured final message and runs in workspace-write sandbox mode. Claude
+Code decodes its JSON result envelope and applies read-only permissions to planning/review roles
+and a bounded edit/command allowlist to implementation roles. Provider selection is resolved from
+project role assignment, organization agents/default, then environment configuration; failures do
+not silently fall back to another provider.
+
+## Current limitations
+
+- Browser updates are polling, not pushed realtime.
+- Planner-created child DAG tasks are not scheduled for execution.
+- No real QA, documentation, or supervisor agent participates in the core workflow.
+- UI screenshot capture, production sandboxing/resource limits, OIDC, full RBAC, and deployment
+  automation remain incomplete.
 
 ## Key decisions
 
