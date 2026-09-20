@@ -153,6 +153,7 @@ export const WorkflowStepKey = asConst({
   FIX: 'FIX',
   RETEST: 'RETEST',
   FINAL_REVIEW: 'FINAL_REVIEW',
+  DOCUMENT: 'DOCUMENT',
   PREPARE_PR: 'PREPARE_PR',
   COMPLETE: 'COMPLETE',
 });

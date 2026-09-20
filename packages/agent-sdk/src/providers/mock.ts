@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { AgentProviderKind, AgentRole } from '@engloop/types';
 import {
+  documentationInputSchema,
   implementationInputSchema,
   parseSafely,
   plannerInputSchema,
@@ -12,6 +13,7 @@ import {
   type AgentTaskContext,
   type ImplementationOutput,
   type PlannerOutput,
+  type DocumentationOutput,
   type RepositoryAnalysisOutput,
   type ReviewOutput,
   type UiReviewOutput,
@@ -137,6 +139,8 @@ export class MockAgentProvider implements CodingAgentProvider {
         return this.review(context);
       case AgentRole.UI_REVIEWER:
         return this.reviewUi();
+      case AgentRole.DOCUMENTATION:
+        return this.document(context);
       default:
         return this.implement(context);
     }
@@ -432,6 +436,27 @@ export class MockAgentProvider implements CodingAgentProvider {
           screenshotId: null,
         },
       ],
+    };
+  }
+
+  private document(context: AgentTaskContext): DocumentationOutput {
+    const parsed = parseSafely(documentationInputSchema, context.input, 'documentation input');
+    const requirement = parsed.ok ? parsed.data.requirement : 'Unspecified requirement';
+    const short = requirement.slice(0, 80);
+
+    return {
+      summary: `Documented "${short}" (mock provider).`,
+      documents: [
+        {
+          path: 'docs/change-notes.md',
+          title: short,
+          content: `# ${short}
+
+${parsed.ok ? (parsed.data.implementationSummary ?? requirement) : requirement}
+`,
+        },
+      ],
+      gaps: [],
     };
   }
 

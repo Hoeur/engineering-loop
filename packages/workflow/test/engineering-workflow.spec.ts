@@ -351,7 +351,7 @@ describe('engineering workflow router', () => {
 
   it('exposes the definition through the registry', () => {
     const definition = getWorkflowDefinition('engineering-task');
-    expect(definition.steps).toHaveLength(13);
+    expect(definition.steps).toHaveLength(14);
     expect(() => getWorkflowDefinition('nope')).toThrow();
   });
 });
@@ -514,5 +514,110 @@ describe('UI QA routing', () => {
 
     // Guards against the test passing vacuously because the step never ran.
     expect(sawUiQa, 'UI QA never ran, so this proved nothing').toBe(true);
+  });
+});
+
+describe('Documentation routing', () => {
+  const approved = (overrides: Partial<WorkflowState> = {}) =>
+    state({
+      completedSteps: [
+        WorkflowStepKey.ANALYZE_REPOSITORY,
+        WorkflowStepKey.PLAN,
+        WorkflowStepKey.CREATE_TASKS,
+        WorkflowStepKey.CREATE_WORKTREE,
+        WorkflowStepKey.IMPLEMENT,
+        WorkflowStepKey.RUN_TESTS,
+        WorkflowStepKey.REVIEW,
+      ],
+      testsPassed: true,
+      reviewApproved: true,
+      ...overrides,
+    });
+
+  it('documents after approval and before the pull request', () => {
+    const decision = decideEngineeringStep(approved());
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.DOCUMENT);
+  });
+
+  it('is opt-out: disabling it routes straight to the pull request', () => {
+    const decision = decideEngineeringStep(approved({ documentationEnabled: false }));
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.PREPARE_PR);
+  });
+
+  it('does not document before the reviewer has approved', () => {
+    const decision = decideEngineeringStep(approved({ reviewApproved: false }));
+    expect(decision.type === 'RUN_STEP' && decision.step.key).not.toBe(WorkflowStepKey.DOCUMENT);
+  });
+
+  it('degrades rather than failing the task: a failed DOCUMENT is optional', () => {
+    const decision = decideEngineeringStep(
+      approved({ failedSteps: [WorkflowStepKey.DOCUMENT] }),
+    );
+    expect(decision.type).toBe('RUN_STEP');
+    // Not merely "something else now" — a failed optional step must never be
+    // asked for again, or the router would spin on it forever.
+    expect(decision.type === 'RUN_STEP' && decision.step.key).toBe(WorkflowStepKey.PREPARE_PR);
+  });
+
+  it('terminates when documentation keeps failing', () => {
+    // The same regression the UI QA guard exists for: DOCUMENT never becomes
+    // `done`, so only `failedFinally` stops the router re-requesting it.
+    let current = state({ failedSteps: [WorkflowStepKey.DOCUMENT] });
+    let guard = 0;
+
+    for (;;) {
+      const decision = decideEngineeringStep(current);
+      if (decision.type !== 'RUN_STEP') break;
+      expect(guard++, 'workflow did not terminate').toBeLessThan(50);
+      expect(decision.step.key, 'a failed optional step was requested again').not.toBe(
+        WorkflowStepKey.DOCUMENT,
+      );
+
+      const key = decision.step.key;
+      current = {
+        ...current,
+        completedSteps: [...new Set([...current.completedSteps, key])],
+        ...(key === WorkflowStepKey.RUN_TESTS || key === WorkflowStepKey.RETEST
+          ? { testsPassed: true, verificationPending: false }
+          : {}),
+        ...(key === WorkflowStepKey.REVIEW || key === WorkflowStepKey.FINAL_REVIEW
+          ? { reviewApproved: true, hasBlockingFindings: false }
+          : {}),
+      };
+    }
+  });
+
+  it('terminates: driving the loop with documentation enabled reaches a non-RUN_STEP decision', () => {
+    let current = state({ maxReviewCycles: 3, maxAttempts: 3 });
+    let guard = 0;
+    let sawDocument = false;
+
+    for (;;) {
+      const decision = decideEngineeringStep(current);
+      if (decision.type !== 'RUN_STEP') {
+        expect(['COMPLETE', 'WAIT_FOR_HUMAN', 'FAIL', 'CANCELLED']).toContain(decision.type);
+        break;
+      }
+      expect(guard++, 'workflow did not terminate').toBeLessThan(50);
+
+      const key = decision.step.key;
+      if (key === WorkflowStepKey.DOCUMENT) sawDocument = true;
+      current = {
+        ...current,
+        completedSteps: [...new Set([...current.completedSteps, key])],
+        ...(key === WorkflowStepKey.IMPLEMENT || key === WorkflowStepKey.FIX
+          ? { verificationPending: true }
+          : {}),
+        ...(key === WorkflowStepKey.RUN_TESTS || key === WorkflowStepKey.RETEST
+          ? { testsPassed: true, verificationPending: false }
+          : {}),
+        ...(key === WorkflowStepKey.REVIEW || key === WorkflowStepKey.FINAL_REVIEW
+          ? { reviewApproved: true, hasBlockingFindings: false }
+          : {}),
+      };
+    }
+
+    // Guards against the test passing vacuously because the step never ran.
+    expect(sawDocument, 'documentation never ran, so this proved nothing').toBe(true);
   });
 });

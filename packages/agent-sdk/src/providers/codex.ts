@@ -143,6 +143,7 @@ export class CodexAgentProvider extends CliCodingAgentProvider {
           AgentRole.SECURITY_REVIEWER,
           AgentRole.PERFORMANCE_REVIEWER,
           AgentRole.IMPLEMENTER,
+          AgentRole.DOCUMENTATION,
         ],
         resumable: true,
         executesCommands: true,
