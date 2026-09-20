@@ -1,10 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem('engloop.auth.token', 'e2e-session');
-  });
-});
+import { expect, test } from './fixtures';
 
 /**
  * Responsive contract from spec section 36: the shell must be usable, and must
@@ -49,7 +43,7 @@ test.describe('application shell', () => {
       const trigger = page.getByRole('button', { name: 'Open navigation' });
       await expect(trigger).toBeVisible();
       await trigger.click();
-      await expect(page.getByRole('link', { name: 'Tasks' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Tasks', exact: true })).toBeVisible();
     } else {
       await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
     }

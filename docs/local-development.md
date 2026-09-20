@@ -47,7 +47,7 @@ pnpm build          # packages, then apps
 pnpm lint           # ESLint, zero warnings
 pnpm typecheck      # tsc --noEmit everywhere
 pnpm test           # Vitest across the workspace
-pnpm test:e2e       # Playwright (start the web app first)
+pnpm test:e2e       # Playwright (API up + seeded; it logs in as the seed user)
 pnpm db:studio      # browse the database
 pnpm docker:logs    # tail container logs
 pnpm docker:reset   # stop and delete volumes

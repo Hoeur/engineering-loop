@@ -119,7 +119,7 @@ export default function OverviewPage(): React.JSX.Element {
             </section>
 
             <div className="grid gap-4 lg:grid-cols-5">
-              <Card className="lg:col-span-2">
+              <Card className="min-w-0 lg:col-span-2">
                 <CardHeader className="flex-row items-center justify-between space-y-0">
                   <CardTitle>Active agent runs</CardTitle>
                   <Link
@@ -172,7 +172,7 @@ export default function OverviewPage(): React.JSX.Element {
                 </CardContent>
               </Card>
 
-              <Card className="lg:col-span-3">
+              <Card className="min-w-0 lg:col-span-3">
                 <CardHeader className="flex-row items-center justify-between space-y-0">
                   <CardTitle>Recent activity</CardTitle>
                   <Link

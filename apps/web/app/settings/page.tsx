@@ -31,7 +31,7 @@ export default function SettingsPage(): React.JSX.Element {
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5" /> Permission levels
@@ -43,7 +43,7 @@ export default function SettingsPage(): React.JSX.Element {
                 <Badge tone={index >= 4 ? 'danger' : index >= 3 ? 'warning' : 'info'}>
                   L{index}
                 </Badge>
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium">{level.replace(/_/g, ' ')}</p>
                   <p className="text-muted-foreground">{PERMISSION_DESCRIPTIONS[level]}</p>
                 </div>
@@ -56,7 +56,7 @@ export default function SettingsPage(): React.JSX.Element {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>Project permissions</CardTitle>
           </CardHeader>
@@ -72,7 +72,9 @@ export default function SettingsPage(): React.JSX.Element {
                       >
                         {project.name}
                       </Link>
-                      <Badge tone="outline">{project.permissionLevel.replace(/_/g, ' ')}</Badge>
+                      <Badge tone="outline" className="shrink-0">
+                        {project.permissionLevel.replace(/_/g, ' ')}
+                      </Badge>
                     </li>
                   ))}
                 </ul>
@@ -81,7 +83,7 @@ export default function SettingsPage(): React.JSX.Element {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
               <GitBranch className="h-3.5 w-3.5" /> Agent worktrees
@@ -99,7 +101,7 @@ export default function SettingsPage(): React.JSX.Element {
                         <p className="truncate font-mono text-[11px]">{worktree.path}</p>
                         <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
                           <span className="truncate">{worktree.branch}</span>
-                          <Badge tone={worktree.clean ? 'success' : 'warning'}>
+                          <Badge tone={worktree.clean ? 'success' : 'warning'} className="shrink-0">
                             {worktree.clean ? 'clean' : 'dirty'}
                           </Badge>
                         </p>
@@ -116,7 +118,7 @@ export default function SettingsPage(): React.JSX.Element {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
               <Terminal className="h-3.5 w-3.5" /> Platform health

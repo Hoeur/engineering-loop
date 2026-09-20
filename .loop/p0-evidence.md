@@ -253,6 +253,54 @@ appear.
 
 ---
 
+## 6. Update — 2026-09-20, P0 closed
+
+Environment: Linux, fresh clone of `github.com/Hoeur/engineering-loop` at
+`b327b11`, Postgres 16 + Redis 7 via `docker compose`, `pnpm db:deploy && pnpm
+db:seed`, API from `pnpm --filter @engloop/api run start`, web from `next build`
+with `NEXT_PUBLIC_API_URL=http://localhost:4000/api`, Playwright's own Chromium.
+
+### Decision on §4.1 — the suite logs in for real
+
+Option 1 (real login) with the **seed** user rather than an operator password.
+`apps/web/e2e/fixtures.ts` posts `founder@evalley.dev / engloop-dev-password` to
+`/api/auth/login` once per worker and stores the JWT under
+`engloop.auth.token` via `addInitScript`. No app code changed for auth; the dev
+bypass stays off. Login failure produces one explicit error naming the URL and
+the env vars to override (`E2E_API_URL`, `E2E_USER_EMAIL`, `E2E_USER_PASSWORD`).
+
+### First authenticated run — 94 passed · 3 failed · 2 flaky
+
+The 13 auth-gated failures cleared and the suite exposed **real defects** the
+login page had been hiding:
+
+| Failure | Root cause | Fix |
+| --- | --- | --- |
+| `/` overflows 221px at 768, 311px at 430 | Dashboard `Card`s are grid items with `min-width: auto`, so a long run title forced the card past the viewport | `min-w-0` on both cards (`apps/web/app/page.tsx`) |
+| `/settings` overflows 15px at 390, 30px at 375 | Same grid-item behaviour; unbreakable worktree paths and permission badges | `min-w-0` on the cards, `shrink-0` on badges (`apps/web/app/settings/page.tsx`) |
+| `Tasks` link (flaky, 390) | `getByRole('link', { name: 'Tasks' })` also matched the "Tasks running 4" metric card once the dashboard finished loading | `exact: true` |
+| command palette (flaky, 430/1440) | `Ctrl+K` pressed before hydration attached the listener | retry the keypress with `toPass` |
+
+### Final result — 99 passed · 0 failed · 0 flaky · 3 skipped, twice
+
+Two consecutive full runs across 1440, 1024, 768, 430, 390 and 375. Full gates
+on the same tree: `pnpm lint` clean, 14 typecheck projects clean, **454 tests
+passing**, `pnpm build` clean.
+
+### CI workflow correction
+
+`.github/workflows/e2e.yml` built the web app without `NEXT_PUBLIC_API_URL`, so
+the browser would call a relative `/api` that the Next server does not serve.
+Added `NEXT_PUBLIC_API_URL` and `E2E_API_URL` to the job env. The workflow is
+schedule/dispatch only and has not been run on GitHub yet.
+
+### P0 acceptance criteria — all met
+
+Every row of §3 is now **Met**. §4.1 is decided above; §4.2 was closed in §5;
+§4.3 is addressed by the commented E2E block in `.env.example`.
+
+---
+
 ## 4. Open decisions
 
 1. **How should E2E authenticate?** The suite's `localStorage` token is not
