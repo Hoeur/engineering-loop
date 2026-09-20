@@ -4,13 +4,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentRole } from '@engloop/types';
 import {
+  documentationOutputSchema,
   parseSafely,
   plannerOutputSchema,
   implementationOutputSchema,
   reviewOutputSchema,
 } from '@engloop/schemas';
 import { makeAgentTaskContext } from '@engloop/testing';
-import { AgentProviderRegistry, MockAgentProvider, estimateCostUsd } from '../src';
+import {
+  AgentProviderRegistry,
+  ClaudeCodeAgentProvider,
+  CodexAgentProvider,
+  MockAgentProvider,
+  estimateCostUsd,
+} from '../src';
 
 const provider = new MockAgentProvider({ latencyMs: 0 });
 
@@ -103,6 +110,37 @@ describe('MockAgentProvider', () => {
     await provider.cancelRun(context.runId);
     const result = await provider.startRun(context);
     expect(result.status).toBe('CANCELLED');
+  });
+});
+
+describe('DOCUMENTATION role support', () => {
+  it('produces schema-valid documentation output', async () => {
+    const result = await provider.startRun(
+      makeAgentTaskContext({
+        role: AgentRole.DOCUMENTATION,
+        input: {
+          taskId: 'task-1',
+          requirement: 'Add a health endpoint',
+          constraints: [],
+          implementationSummary: 'Added GET /health',
+          plannerSummary: null,
+        },
+      }),
+    );
+
+    expect(result.status).toBe('SUCCEEDED');
+    const parsed = parseSafely(documentationOutputSchema, result.output, 'documentation output');
+    expect(parsed.ok).toBe(true);
+  });
+
+  // The registry refuses a role a provider does not declare, so a workflow step
+  // for a role missing from these lists fails every single run. Adding the step
+  // without the capability is exactly the bug this asserts against.
+  it.each([
+    ['codex', () => new CodexAgentProvider({ cliPath: 'codex', model: 'gpt-test' })],
+    ['claude-code', () => new ClaudeCodeAgentProvider({ cliPath: 'claude', model: 'claude-test' })],
+  ])('is declared by the %s provider', (_label, build) => {
+    expect(build().capabilities.roles).toContain(AgentRole.DOCUMENTATION);
   });
 });
 

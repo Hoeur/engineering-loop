@@ -127,6 +127,22 @@ export const ENGINEERING_TASK_STEPS: readonly WorkflowStepDefinition[] = Object.
     requiredPermission: PermissionLevel.LEVEL_1_PLAN,
   }),
   step({
+    key: WorkflowStepKey.DOCUMENT,
+    title: 'Documentation',
+    description: 'Documentation agent records what changed and why.',
+    kind: 'AGENT',
+    role: AgentRole.DOCUMENTATION,
+    entryStatus: TaskStatus.REVIEWING,
+    // Reads the approved diff and writes prose. It never needs to change
+    // behaviour, so it sits at the same level as a review rather than at
+    // LEVEL_2_CODE.
+    requiredPermission: PermissionLevel.LEVEL_1_PLAN,
+    // Optional on purpose, for the same reason UI QA is: missing documentation
+    // degrades a run, it does not invalidate code that passed every gate.
+    optional: true,
+    maxAttempts: 1,
+  }),
+  step({
     key: WorkflowStepKey.PREPARE_PR,
     title: 'Prepare pull request',
     description: 'Branch is pushed and a pull request is opened.',
@@ -281,6 +297,22 @@ export const decideEngineeringStep = (state: WorkflowState): WorkflowDecision =>
       isFinalCycle ? WorkflowStepKey.FINAL_REVIEW : WorkflowStepKey.REVIEW,
       `Review cycle ${String(state.reviewCycle + 1)} of ${String(state.maxReviewCycles)}`,
     );
+  }
+
+  // Documentation runs once the review is approved and before the pull request,
+  // so the PR describes work that already exists rather than work in progress.
+  //
+  // Both terminal guards are load-bearing, exactly as they are for UI_QA: DOCUMENT
+  // is optional, so the failed-step loop at the top skips past it rather than
+  // failing the task. Gating on `done` alone would leave a documentation step
+  // that exhausted its attempts forever "not done", and the router would request
+  // it on every advance without end.
+  if (
+    state.documentationEnabled &&
+    !done(WorkflowStepKey.DOCUMENT) &&
+    !failedFinally(WorkflowStepKey.DOCUMENT)
+  ) {
+    return run(WorkflowStepKey.DOCUMENT, 'Review approved; documenting the change');
   }
 
   if (state.createPullRequest && !done(WorkflowStepKey.PREPARE_PR)) {

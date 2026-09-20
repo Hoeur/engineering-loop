@@ -175,6 +175,7 @@ export class ClaudeCodeAgentProvider extends CliCodingAgentProvider {
           AgentRole.CODE_REVIEWER,
           AgentRole.SECURITY_REVIEWER,
           AgentRole.PERFORMANCE_REVIEWER,
+          AgentRole.DOCUMENTATION,
         ],
         resumable: true,
         executesCommands: true,

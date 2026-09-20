@@ -60,6 +60,12 @@ export interface WorkflowState {
    * which is what keeps `decideEngineeringStep` free of IO.
    */
   uiQaEnabled: boolean;
+  /**
+   * Whether this project documents its changes. Defaults to true: a task that
+   * reached approval has a diff worth explaining, and the step is optional so
+   * the cost of being wrong is a degraded run rather than a failed one.
+   */
+  documentationEnabled: boolean;
   skipPlanning: boolean;
   createPullRequest: boolean;
   permissionLevel: PermissionLevel;
@@ -90,6 +96,7 @@ export const createInitialWorkflowState = (
   reviewApproved: false,
   hasBlockingFindings: false,
   uiQaEnabled: false,
+  documentationEnabled: true,
   skipPlanning: false,
   createPullRequest: true,
   permissionLevel: PermissionLevel.LEVEL_3_PR,

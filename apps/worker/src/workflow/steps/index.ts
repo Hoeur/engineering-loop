@@ -3,6 +3,7 @@ import { analyzeRepositoryStep, createTasksStep, planStep } from './analyze-and-
 import { createWorktreeStep, fixStep, implementStep } from './implement';
 import { finalReviewStep, retestStep, reviewStep, runTestsStep } from './verify';
 import { uiQaStep } from './ui-qa';
+import { documentStep } from './document';
 import { completeStep, preparePullRequestStep } from './finalize';
 import type { StepHandlerMap } from './types';
 
@@ -19,6 +20,7 @@ export const STEP_HANDLERS: StepHandlerMap = {
   [WorkflowStepKey.FIX]: fixStep,
   [WorkflowStepKey.RETEST]: retestStep,
   [WorkflowStepKey.FINAL_REVIEW]: finalReviewStep,
+  [WorkflowStepKey.DOCUMENT]: documentStep,
   [WorkflowStepKey.PREPARE_PR]: preparePullRequestStep,
   [WorkflowStepKey.COMPLETE]: completeStep,
 };

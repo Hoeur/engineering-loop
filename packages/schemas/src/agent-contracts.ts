@@ -360,6 +360,40 @@ export const uiReviewOutputSchema = z.object({
 export type UiReviewOutput = z.infer<typeof uiReviewOutputSchema>;
 
 // ---------------------------------------------------------------------------
+// Documentation
+// ---------------------------------------------------------------------------
+
+export const documentationInputSchema = z.object({
+  taskId: z.string(),
+  requirement: z.string(),
+  constraints: z.array(z.string()).default([]),
+  implementationSummary: z.string().nullable().default(null),
+  plannerSummary: z.string().nullable().default(null),
+});
+export type DocumentationInput = z.infer<typeof documentationInputSchema>;
+
+export const documentationOutputSchema = z.object({
+  summary: z.string().min(1),
+  /**
+   * Documents the agent wrote. `path` is repository-relative and validated
+   * against traversal before anything is persisted: the agent chooses what to
+   * document, never where on the host it lands.
+   */
+  documents: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        title: z.string().min(1),
+        content: z.string().min(1),
+      }),
+    )
+    .default([]),
+  /** Things the agent could not document and why — surfaced, not swallowed. */
+  gaps: z.array(z.string()).default([]),
+});
+export type DocumentationOutput = z.infer<typeof documentationOutputSchema>;
+
+// ---------------------------------------------------------------------------
 // Repository analysis
 // ---------------------------------------------------------------------------
 
@@ -418,6 +452,7 @@ export type AgentRunResult = z.infer<typeof agentRunResultSchema>;
 
 /** Maps an agent role to the schema its output must satisfy. */
 export const ROLE_OUTPUT_SCHEMAS = {
+  DOCUMENTATION: documentationOutputSchema,
   PLANNER: plannerOutputSchema,
   ARCHITECT: repositoryAnalysisOutputSchema,
   IMPLEMENTER: implementationOutputSchema,
