@@ -22,6 +22,24 @@ const isUiQaEnabled = (settings: Prisma.JsonValue | null | undefined): boolean =
   if (typeof uiQa !== 'object' || uiQa === null || Array.isArray(uiQa)) return false;
   return (uiQa as Record<string, unknown>).enabled === true;
 };
+/**
+ * Reads `Project.settings.documentation.enabled`.
+ *
+ * Mirrors `isUiQaEnabled` but inverts the default: every repository with an
+ * approved diff benefits from documentation, so this is opt-**out**. Only an
+ * explicit `false` disables it; any other shape in this unvalidated JSON column
+ * leaves it on, and the step is optional, so being wrong degrades a run rather
+ * than failing one.
+ */
+const isDocumentationEnabled = (settings: Prisma.JsonValue | null | undefined): boolean => {
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return true;
+  const documentation = (settings as Record<string, unknown>).documentation;
+  if (typeof documentation !== 'object' || documentation === null || Array.isArray(documentation)) {
+    return true;
+  }
+  return (documentation as Record<string, unknown>).enabled !== false;
+};
+
 const STEP_LEASE_MS = 20_000;
 const STEP_HEARTBEAT_MS = 5_000;
 
@@ -144,6 +162,7 @@ export class WorkflowEngine {
       // Resolved here, in the engine, so the router keeps seeing a plain boolean
       // and stays a pure function of its state.
       uiQaEnabled: isUiQaEnabled(task.project.settings),
+      documentationEnabled: isDocumentationEnabled(task.project.settings),
     };
 
     const definition = getWorkflowDefinition(run.definitionKey);

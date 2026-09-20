@@ -21,9 +21,9 @@ flowchart LR
     REDIS[(Redis)]
   end
   subgraph Providers["Coding agents"]
-    MOCK[Mock]
     CODEX[Codex CLI]
     CLAUDE[Claude Code CLI]
+    MOCK[Mock]
   end
 
   WEB -->|REST + envelope| API
@@ -31,11 +31,15 @@ flowchart LR
   API -->|enqueue| REDIS
   REDIS -->|jobs| WORKER
   WORKER --> PG
-  WORKER -->|CodingAgentProvider| MOCK
-  WORKER -->|Codex CLI adapter| CODEX
-  WORKER -->|Claude Code CLI adapter| CLAUDE
+  WORKER -->|CodingAgentProvider| CODEX
+  WORKER -->|CodingAgentProvider| CLAUDE
+  WORKER -.opt-in, offline tests only.-> MOCK
   WORKER -->|git + commands| WT[(workspace/worktrees)]
 ```
+
+All three adapters implement `CodingAgentProvider` and are selected by
+configuration, not by code. The mock is **disabled by default** and enabled only
+by `AGENT_ENABLE_MOCK` for offline testing — real execution is the default path.
 
 The API cannot spawn a process or touch a working copy. The worker is the only
 component that can. That split is what makes "the platform verifies, the agent
