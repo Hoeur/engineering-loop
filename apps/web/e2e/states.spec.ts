@@ -1,10 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem('engloop.auth.token', 'e2e-session');
-  });
-});
+import { expect, test } from './fixtures';
 
 /**
  * Spec section 37: no screen may be blank. With the API unreachable, every

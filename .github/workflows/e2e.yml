@@ -10,6 +10,10 @@ env:
   AUTH_JWT_SECRET: ci-secret-that-is-long-enough-for-validation
   SECRETS_ENCRYPTION_KEY: ci-secret-that-is-long-enough-for-validation
   NEXT_TELEMETRY_DISABLED: '1'
+  # Inlined into the web build so the browser calls the API job step below
+  # instead of a relative `/api` the Next server does not serve.
+  NEXT_PUBLIC_API_URL: http://localhost:4000/api
+  E2E_API_URL: http://localhost:4000/api
 
 jobs:
   playwright:

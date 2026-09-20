@@ -1,6 +1,6 @@
 # Plan — EngLoop delivery sequence (P0–P6)
 
-**Status:** active index · **Created:** 2026-09-19
+**Status:** active index · **Created:** 2026-09-19 · **Updated:** 2026-09-20
 **Source:** `docs/next-plan.md`
 **Supersedes:** `.loop/plan-real-ui-qa.md` as the *active* index. That plan is not
 cancelled — it is rescheduled to **P3**, and its task specs stay valid.
@@ -25,7 +25,7 @@ That is the whole reason for re-indexing rather than continuing.
 
 | Priority | Phase | Depends on | Status |
 | --- | --- | --- | --- |
-| P0 | Restore evidence baseline | — | **in progress** — 2 criteria open |
+| P0 | Restore evidence baseline | — | **done** — all criteria met 2026-09-20 |
 | P1 | Sandboxed agent execution | P0 | not started |
 | P2 | Real provider and GitHub delivery | P0, preferably P1 | not started |
 | P3 | Real UI QA and live run updates | P0, P2 | **partially done** — see below |
@@ -44,10 +44,10 @@ Evidence record: `.loop/p0-evidence.md`.
 | Branch, upstream, remote, HEAD, status captured | Met |
 | Repair diff reviewable against a real base revision | Met — `9d58bc4` |
 | `pnpm lint` / `typecheck` / `test` | Met — clean · clean · 409 passing |
-| `pnpm build` | **Open** — was blocked by a `.next` lock; lock has since cleared, needs a re-run |
+| `pnpm build` | Met — `.loop/p0-evidence.md` §5 |
 | `pnpm test:e2e` runs on Windows | Met, with `PLAYWRIGHT_CHROMIUM_PATH` + `PLAYWRIGHT_BASE_URL` |
-| Six viewports pass without uncaught errors | **Open** — 13 auth-gated failures |
-| No horizontal scrolling | Met for rendered pages; **unproven for the authenticated shell** |
+| Six viewports pass without uncaught errors | Met — 99 passed / 0 flaky, twice in a row (`.loop/p0-evidence.md` §6) |
+| No horizontal scrolling | Met for the authenticated shell at all six widths, after fixing two real overflows |
 | Worktree clean, repair committed | Met |
 
 ### The auth gap — root-caused, not guessed
@@ -65,16 +65,16 @@ curl -H "Authorization: Bearer e2e-session" localhost:4000/api/tasks  → HTTP 4
 An earlier hypothesis that the gate decodes a JWT was **wrong** and is recorded
 here so it is not re-derived.
 
-**Chosen fix:** `AUTH_DEV_BYPASS=true`. `AuthService.resolveDevUser()`
-(`apps/api/src/modules/auth/auth.service.ts:117`) resolves the seeded user and
-refuses to activate in production. Preconditions verified: `founder@evalley.dev`
-exists with 1 organization membership. Requires an API restart — the process
-watches source, not `.env`.
+`AUTH_DEV_BYPASS=true` was tried first and does not help: the guard only applies
+the bypass when **no** `Authorization` header is sent, and the web app always
+sends one once a token is stored (`.loop/p0-evidence.md` §5).
 
-**P5 follow-up:** this is a development bypass. P5's criterion "`AUTH_DEV_BYPASS`
-is disabled in production and cannot be enabled accidentally" means the E2E suite
-will need a real login or a `storageState` fixture before P5 completes. Recorded
-now so it is not discovered then.
+**Chosen fix (shipped):** the suite logs in for real. `apps/web/e2e/fixtures.ts`
+posts the seed credentials to `/api/auth/login` once per worker and plants the
+returned JWT before each page loads. This is option 1 from the evidence record,
+using the seed user instead of an operator password, so it also survives P5
+removing the dev bypass. Credentials and API URL are overridable via
+`E2E_USER_EMAIL`, `E2E_USER_PASSWORD`, `E2E_API_URL`.
 
 ---
 
@@ -110,8 +110,8 @@ Task 02 should be re-planned against that port rather than deciding independentl
 **Source:** "EngLoop New Feature TODO Roadmap" · **Added:** 2026-09-19
 
 These are user-facing features, distinct from the P0–P6 infrastructure phases.
-**None is startable today** — each depends on phases that have not begun, and P0
-itself is not closed.
+**None is startable today** — each depends on phases that have not begun. P0 is
+closed, so P1 and P5 (which depend only on P0) are the phases that unblock them.
 
 | Feature | Stated deps | Dep status | Schema gap |
 | --- | --- | --- | --- |
@@ -164,7 +164,7 @@ the same termination tests.
 
 ## Progress
 
-- [ ] P0 — 2 criteria open (build re-run, six-viewport pass)
+- [x] P0 — closed 2026-09-20: real E2E login, six viewports green, two overflow defects fixed
 - [ ] P1 — sandboxed agent execution
 - [ ] P2 — real provider and GitHub delivery
 - [~] P3 — UI QA step done (`94a1b76`); capture, wiring and surfacing open
@@ -183,13 +183,24 @@ the same termination tests.
 
 ### P0 → everything
 
-- The repo has **no remote**. `9d58bc4` is the root commit; history was
-  investigated and none was lost (`.loop/p0-evidence.md` §1). Any plan step that
-  says "push" or "clone from the authoritative remote" has no target yet.
+- `9d58bc4` is the root commit; history was investigated and none was lost
+  (`.loop/p0-evidence.md` §1). The repository now lives at
+  `github.com/Hoeur/engineering-loop` (`main`), so "push" steps have a target.
+- Ungated work has landed outside the P0–P6 index: provider API keys configured
+  from the UI (`c6643ab`) and per-agent token/cost budgets (`9c50de5`). Neither
+  is a phase deliverable; both touch surfaces P1 (credential passing) and P5
+  (authorization) will need to re-verify.
 - A web server runs on **port 3001**, not 3000, and is supervised — it restarts
   itself and holds `apps/web/.next`. `PLAYWRIGHT_BASE_URL=http://localhost:3001`.
 - Chromium 1234 is installed at `chrome-win64/`, but Playwright looks for
   `chrome-win/`. `PLAYWRIGHT_CHROMIUM_PATH` is required until this is normalised
   — worth adding to `.env.example`.
-- `/insights/costs` overflow and `states.spec.ts › empty state` are **flaky**,
-  not deterministic failures.
+- The E2E CI workflow (`.github/workflows/e2e.yml`) is schedule/dispatch only
+  and had never been able to pass: the web build did not inline
+  `NEXT_PUBLIC_API_URL`, so the browser called a relative `/api` the Next server
+  does not serve. Fixed alongside the login fixture; run it via
+  `workflow_dispatch` to confirm on GitHub runners.
+- Two flakes were root-caused and removed rather than retried around: the
+  `Tasks` link locator also matched the "Tasks running" metric card once the
+  dashboard loaded (`exact: true`), and the `Ctrl+K` press could land before
+  hydration attached the listener (`toPass` retry).
