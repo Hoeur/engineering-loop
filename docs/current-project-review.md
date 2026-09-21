@@ -202,10 +202,14 @@ Implemented:
 - Permission levels gate the loop; a project below `LEVEL_2_CODE` plans and then
   stops visibly with an approval request rather than silently skipping a gate.
 - `packages/config/src/env.ts` rejects placeholder secrets at boot.
+- Prompt-injection scan (`scanAgentContext`, `packages/agent-sdk`) over the
+  role input and fetched guidance files, run in `AgentExecutor` before any
+  credential is primed. HIGH findings fail the run closed; every finding is an
+  `INJECTION_DETECTED` audit row. _Added 2026-09-21 (PKG-001)._
 
 Documented as **absent** in `docs/security.md`, and confirmed absent in code:
 network policy for agent processes, per-run resource limits, container
-sandboxing, per-resource RBAC, prompt-injection scanning.
+sandboxing, per-resource RBAC.
 
 ---
 
@@ -272,7 +276,6 @@ Measured against the brief.
 | Email integration                  | no implementation; interface only       |
 | MCP integration                    | no match anywhere in source             |
 | Slack notifications                | `NotificationProvider` interface only   |
-| Prompt-injection defence           | no scanner                              |
 | Container sandboxing               | documented as absent                    |
 | OIDC / per-resource RBAC           | dev JWT only                            |
 
@@ -324,10 +327,11 @@ during this review; it is gitignored and not part of the source tree.
    executable, a timeout and a cost budget. There is no container, no resource
    cap and no egress restriction. The blast radius of a hostile or confused
    agent is the worker host.
-2. **No prompt-injection defence.** Repository content and agent output are
-   schema-validated as *data*, which is correct and already prevents a whole
-   class of problems — but nothing scans a task description or a fetched file
-   for instructions aimed at the agent.
+2. **Prompt-injection defence is pattern-based.** _(Was: none. PKG-001 shipped
+   2026-09-21.)_ Task input and fetched guidance are now scanned before the
+   provider spawns, and HIGH findings block. The scanner is a regex tier list,
+   so novel phrasings pass; it is a tripwire plus audit trail, not a
+   classifier. Sandboxing (OPS-001) remains the real containment.
 3. **Polling will not scale to live runs.** A 5-second interval across many
    concurrent runs multiplies into constant load, and still shows a stale UI.
 4. **Serial execution wastes the DAG.** The planner already emits dependency
@@ -358,8 +362,8 @@ In priority order, with reasoning.
 7. **Telegram command centre**, then email triage — both are brief requirements
    with zero current implementation.
 8. **OIDC and per-resource RBAC** before any multi-tenant production use.
-9. **Prompt-injection scanning** of task descriptions and fetched repository
-   content.
+9. ~~**Prompt-injection scanning**~~ — done (PKG-001, 2026-09-21). Follow-up:
+   show `INJECTION_DETECTED` findings on the task page.
 
 ---
 

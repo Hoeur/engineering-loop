@@ -5,7 +5,9 @@ import type { Prisma, PrismaClient } from '@engloop/db';
 import {
   type AgentProviderRegistry,
   AgentOutputInvalidError,
+  InjectionBlockedError,
   ProviderUnavailableError,
+  scanAgentContext,
 } from '@engloop/agent-sdk';
 import { ROLE_OUTPUT_SCHEMAS, parseSafely, type AgentRunResult } from '@engloop/schemas';
 import type { AuditWriter } from './audit-writer';
@@ -296,6 +298,38 @@ export class AgentExecutor {
         },
       });
 
+      // Task input and repository guidance are untrusted. Scan them before any
+      // credential is decrypted; a HIGH finding fails the run closed.
+      const scan = scanAgentContext(context);
+      if (scan.findings.length > 0) {
+        runLogger.warn(
+          {
+            blocking: scan.blocking,
+            highestConfidence: scan.highestConfidence,
+            patterns: scan.findings.map((finding) => `${finding.source}:${finding.patternId}`),
+          },
+          'agent.input.injection_detected',
+        );
+        await audit.record({
+          organizationId: task.project.organizationId,
+          projectId: task.projectId,
+          taskId: input.taskId,
+          action: AuditAction.INJECTION_DETECTED,
+          entityType: 'agent_run',
+          entityId: agentRun.id,
+          summary: scan.blocking
+            ? `${input.role} refused: ${scan.highestConfidence} prompt-injection finding in ${scan.findings[0]?.source}`
+            : `${input.role} input flagged: ${scan.highestConfidence} prompt-injection finding in ${scan.findings[0]?.source}`,
+          metadata: {
+            blocking: scan.blocking,
+            highestConfidence: scan.highestConfidence,
+            findings: scan.findings,
+          },
+          traceId: input.traceId,
+        });
+        if (scan.blocking) throw new InjectionBlockedError(scan.findings);
+      }
+
       if (await cancellationRequested()) {
         throw new Error('Agent run was cancelled before its provider started');
       }
@@ -348,6 +382,8 @@ export class AgentExecutor {
         failure = { code: 'AGENT_OUTPUT_INVALID', message: error.message };
       } else if (error instanceof ProviderUnavailableError) {
         failure = { code: 'AGENT_PROVIDER_UNAVAILABLE', message: error.message };
+      } else if (error instanceof InjectionBlockedError) {
+        failure = { code: error.code, message: error.message };
       } else {
         failure = {
           code: 'AGENT_RUN_FAILED',
