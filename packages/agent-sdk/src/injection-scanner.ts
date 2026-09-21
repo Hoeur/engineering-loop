@@ -55,6 +55,36 @@ export class InjectionBlockedError extends Error {
 
 const EXCERPT_RADIUS = 60;
 
+/**
+ * Value-shaped secrets that may sit inside an excerpt. Audit metadata is only
+ * key-scrubbed downstream, so free text must be masked here before it is
+ * persisted.
+ */
+const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
+  /\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTHORIZATION)[A-Z0-9_]*)(\s*[:=]\s*)("[^"]*"|'[^']*'|\S+)/gi,
+  /\bbearer\s+[a-z0-9._~+/-]+=*/gi,
+  /\b(?:sk|pk|rk)-[a-z0-9_-]{8,}/gi,
+  /\b(?:gh[pousr]|github_pat)_[a-z0-9_]{8,}/gi,
+  /\bxox[abpors]-[a-z0-9-]{8,}/gi,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\beyJ[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}/gi,
+  /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/g,
+  /\b[a-f0-9]{32,}\b/gi,
+];
+
+export const maskSecretValues = (text: string): string => {
+  let out = text;
+  for (const pattern of SECRET_VALUE_PATTERNS) {
+    out = out.replace(pattern, (match: string, ...groups: unknown[]) => {
+      const [name, separator] = groups;
+      return typeof name === 'string' && typeof separator === 'string'
+        ? `${name}${separator}[redacted]`
+        : '[redacted]';
+    });
+  }
+  return out;
+};
+
 /** Ordered from most to least specific. Every pattern is case-insensitive. */
 export const INJECTION_PATTERNS: readonly InjectionPattern[] = Object.freeze([
   {
@@ -143,7 +173,7 @@ const excerptAround = (text: string, index: number, length: number): string => {
   const end = Math.min(text.length, index + length + EXCERPT_RADIUS);
   const prefix = start > 0 ? '…' : '';
   const suffix = end < text.length ? '…' : '';
-  return `${prefix}${text.slice(start, end).replace(/\s+/g, ' ').trim()}${suffix}`;
+  return `${prefix}${maskSecretValues(text.slice(start, end).replace(/\s+/g, ' ').trim())}${suffix}`;
 };
 
 /** Scans one piece of text. Each pattern reports at most one finding. */
