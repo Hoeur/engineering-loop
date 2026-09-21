@@ -423,6 +423,7 @@ export const AuditAction = asConst({
   CONFIGURATION_CHANGED: 'CONFIGURATION_CHANGED',
   SCHEDULE_CHANGED: 'SCHEDULE_CHANGED',
   SECRET_ACCESSED: 'SECRET_ACCESSED',
+  INJECTION_DETECTED: 'INJECTION_DETECTED',
 });
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

@@ -101,10 +101,11 @@ Acceptance criteria:
 
 ---
 
-### PKG-001 — Prompt-injection scanning
+### PKG-001 — Prompt-injection scanning ✅ DONE
 
 Priority: P0
-Project: packages/agent-sdk (+ worker)
+Project: packages/agent-sdk (+ worker, packages/db, packages/types, web)
+Completed: 2026-09-21 — verified by lint, typecheck, **526 tests**, build.
 
 Dependencies:
 
@@ -112,21 +113,43 @@ Dependencies:
 
 Description:
 Repository content and agent output are schema-validated as data, which already
-prevents a class of attacks. Nothing yet scans a task description or a fetched
+prevents a class of attacks. Nothing scanned a task description or a fetched
 file for instructions aimed at the agent.
 
 Tasks:
 
-- [ ] Scanner for injection patterns in task descriptions and fetched content
-- [ ] Flag rather than silently strip; record the finding
-- [ ] Surface as a blocking finding when confidence is high
-- [ ] Unit tests with a corpus of known injection strings
+- [x] Scanner for injection patterns in task descriptions and fetched content —
+      `packages/agent-sdk/src/injection-scanner.ts`, `scanAgentContext` walks
+      the role input recursively and every `guidance.files` entry
+- [x] Flag rather than silently strip; record the finding — `AuditAction.
+    INJECTION_DETECTED` row with pattern id, confidence, source and a bounded
+      excerpt (secret-scrubbed by `AuditWriter`)
+- [x] Surface as a blocking finding when confidence is high — `AgentExecutor`
+      throws `InjectionBlockedError` before any credential is primed; the run
+      ends `FAILED` with `errorCode: AGENT_INPUT_INJECTION`
+- [x] Unit tests with a corpus of known injection strings — 43 scanner specs
+      including a false-positive sweep over this repo's own `AGENTS.md`,
+      `README.md`, `TODO.md` and `.ai/*.md`; 4 executor specs
 
 Acceptance criteria:
 
-- A task description containing agent-directed instructions is flagged
-- The scan result is auditable
-- No false positive blocks a normal engineering description
+- A task description containing agent-directed instructions is flagged ✅
+- The scan result is auditable ✅
+- No false positive blocks a normal engineering description ✅ (regression
+  corpus in `packages/agent-sdk/test/injection-scanner.spec.ts`)
+
+Decisions worth knowing:
+
+- Detection is regex-based with three coarse confidence tiers. Only `HIGH`
+  blocks (override instructions, secret exfiltration, disabling _the agent's
+  own_ controls, persona hijack, chat-template delimiters). `MEDIUM`/`LOW`
+  (directly addressing the model, concealment from reviewers, `curl | sh`,
+  authority claims, zero-width characters) are audit-only so a reviewer sees
+  them without a false positive halting the loop.
+- Project memory and budgets are not scanned: they are written by operators
+  through the API, not fetched from the repository.
+- Follow-up (not P0): surface `INJECTION_DETECTED` rows on the task page and
+  let a project raise `MEDIUM` to blocking.
 
 ---
 
