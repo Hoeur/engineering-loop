@@ -49,6 +49,13 @@ These are modelled but **not** enforced. Do not describe them as protections:
 Before running untrusted agents against real repositories, run the worker in a
 locked-down container with an egress allowlist and per-run resource caps.
 
+The worker now routes CLI providers through the `HOST_PROCESS` execution-runtime
+adapter. It scopes each run's worktree, executable, timeout, credential
+environment and cancellation handle, and records `isolated: false` in its
+descriptor. This is lifecycle and secret isolation inside one worker process;
+it does not change any placeholder above into an implemented containment
+control.
+
 ## Reporting
 
 Security findings surface as `ReviewFinding` rows with `category: SECURITY` and

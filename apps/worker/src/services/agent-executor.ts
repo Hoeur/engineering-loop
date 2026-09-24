@@ -12,8 +12,8 @@ import type { AuditWriter } from './audit-writer';
 import type { UsageRecorder } from './usage-recorder';
 import type { ContextBuilder } from './context-builder';
 import type { CredentialResolver } from './credential-resolver';
-import type { ProviderCredentialStore } from './provider-credential-store';
 import { claudeCodeCliAuth, codexCliAuth, type CliAuth } from '../provider-auth';
+import type { AgentExecutionRuntime, ExecutionRuntimeDescriptor } from '../execution';
 
 export interface ExecuteAgentInput {
   taskId: string;
@@ -45,20 +45,20 @@ interface AgentExecutorDeps {
   usage: UsageRecorder;
   contextBuilder: ContextBuilder;
   credentials: CredentialResolver;
-  credentialStore: ProviderCredentialStore;
+  executionRuntime: AgentExecutionRuntime;
 }
 
 /**
  * Runs one agent and persists everything about it (spec sections 8, 21, 31).
  *
- * Enforces the run-level safety envelope: isolated workspace, timeout, token and
+ * Enforces the run-level safety envelope: run-scoped workspace, timeout, token and
  * cost budget, schema-validated output, full audit trail.
  */
 export class AgentExecutor {
   constructor(private readonly deps: AgentExecutorDeps) {}
 
   async execute(input: ExecuteAgentInput): Promise<ExecuteAgentOutcome> {
-    const { prisma, registry, logger, audit, usage, contextBuilder, credentialStore } = this.deps;
+    const { prisma, registry, logger, audit, usage, contextBuilder, executionRuntime } = this.deps;
 
     const task = await prisma.task.findUniqueOrThrow({
       where: { id: input.taskId },
@@ -135,9 +135,7 @@ export class AgentExecutor {
             role: input.role,
             providerKey: resolution.providerKey,
             model: resolution.model,
-            status: parentCancelled
-              ? AgentRunStatus.CANCELLED
-              : AgentRunStatus.BUDGET_EXCEEDED,
+            status: parentCancelled ? AgentRunStatus.CANCELLED : AgentRunStatus.BUDGET_EXCEEDED,
             errorCode: parentCancelled ? null : 'AGENT_BUDGET_EXCEEDED',
             errorMessage: parentCancelled
               ? 'Parent task or workflow was cancelled'
@@ -217,24 +215,12 @@ export class AgentExecutor {
       workflowRunId: input.workflowRunId,
     });
 
-    await audit.record({
-      organizationId: task.project.organizationId,
-      projectId: task.projectId,
-      taskId: input.taskId,
-      action: AuditAction.AGENT_STARTED,
-      entityType: 'agent_run',
-      entityId: agentRun.id,
-      summary: `${input.role} started on ${resolution.providerKey}`,
-      metadata: { model: resolution.model, workspacePath: input.workspacePath },
-      traceId: input.traceId,
-    });
-
     let result: AgentRunResult | null = null;
     let failure: { code: string; message: string } | null = null;
     let actualProviderKey = resolution.providerKey;
     let actualModel = resolution.model;
-    /** Set once a credential is primed, so it is cleared on every exit path. */
-    let credentialPrimed: string | null = null;
+    let runtimePrepared = false;
+    let runtimeDescriptor: ExecutionRuntimeDescriptor | null = null;
 
     const cancellationRequested = async (): Promise<boolean> => {
       const current = await prisma.agentRun.findUnique({
@@ -255,7 +241,8 @@ export class AgentExecutor {
       if (
         taskState?.status !== TaskStatus.CANCELLED &&
         workflowState?.status !== RunStatus.CANCELLED
-      ) return false;
+      )
+        return false;
 
       await prisma.agentRun.updateMany({
         where: { id: agentRun.id, status: AgentRunStatus.RUNNING },
@@ -300,14 +287,41 @@ export class AgentExecutor {
         throw new Error('Agent run was cancelled before its provider started');
       }
 
-      // Resolve this organization's stored key and prime it for the spawn. The
-      // SDK reads it back synchronously from the store inside `startRun`.
-      const auth = await this.resolveCliAuth(task.project.organizationId, provider.key);
-      credentialStore.set(provider.key, auth);
-      credentialPrimed = provider.key;
+      let credentialSource: CliAuth['source'] | 'not-required' = 'not-required';
+      if (provider.capabilities.executesCommands) {
+        const auth = await this.resolveCliAuth(task.project.organizationId, provider.key);
+        credentialSource = auth.source;
+        runtimeDescriptor = await executionRuntime.prepare({
+          runId: agentRun.id,
+          workspacePath: input.workspacePath,
+          limits: {
+            timeoutMs: context.budget.timeoutMs,
+            allowedCommands: this.providerCommands(provider.kind),
+          },
+          secretEnv: auth.env,
+          credentialSource: auth.source,
+        });
+        runtimePrepared = true;
+      }
+
+      await audit.record({
+        organizationId: task.project.organizationId,
+        projectId: task.projectId,
+        taskId: input.taskId,
+        action: AuditAction.AGENT_STARTED,
+        entityType: 'agent_run',
+        entityId: agentRun.id,
+        summary: `${input.role} started on ${provider.key}`,
+        metadata: {
+          model: actualModel,
+          runtime: runtimeDescriptor ?? { kind: 'IN_PROCESS', isolated: false },
+          credentialSource,
+        },
+        traceId: input.traceId,
+      });
 
       runLogger.info(
-        { provider: provider.key, role: input.role, credentialSource: auth.source },
+        { provider: provider.key, role: input.role, credentialSource },
         'agent.run.started',
       );
       let checkingCancellation = false;
@@ -318,7 +332,10 @@ export class AgentExecutor {
         try {
           if (await cancellationRequested()) {
             cancellationSent = true;
-            await provider.cancelRun(agentRun.id);
+            await Promise.all([
+              provider.cancelRun(agentRun.id),
+              executionRuntime.cancel(agentRun.id),
+            ]);
           }
         } catch (error) {
           runLogger.warn({ error: String(error) }, 'agent.cancel.poll_failed');
@@ -356,8 +373,13 @@ export class AgentExecutor {
       }
       runLogger.error({ ...failure }, 'agent.run.failed');
     } finally {
-      // A decrypted key must not stay readable once this run has spawned.
-      if (credentialPrimed) credentialStore.clear(credentialPrimed);
+      if (runtimePrepared) {
+        try {
+          await executionRuntime.release(agentRun.id);
+        } catch (error) {
+          runLogger.warn({ error: String(error) }, 'agent.runtime.release_failed');
+        }
+      }
     }
 
     const status: AgentRunStatus = failure
@@ -469,6 +491,7 @@ export class AgentExecutor {
         durationMs: persisted.durationMs,
         totalTokens: persisted.totalTokens,
         costUsd: Number(persisted.estimatedCost),
+        terminalReason: failure?.code ?? result?.error?.code ?? status,
       },
       traceId: input.traceId,
     });
@@ -500,6 +523,13 @@ export class AgentExecutor {
     if (providerKey === 'codex') return codexCliAuth(apiKey, env.CODEX_HOME);
     // Providers without CLI credentials (e.g. mock) spawn with no extra env.
     return { source: apiKey ? 'api-key' : 'cli-login', env: {} };
+  }
+
+  private providerCommands(kind: string): readonly string[] {
+    const { env } = this.deps;
+    if (kind === 'CODEX') return [env.CODEX_CLI_PATH];
+    if (kind === 'CLAUDE_CODE') return [env.CLAUDE_CODE_CLI_PATH];
+    throw new ProviderUnavailableError(kind, 'no host-process command is configured');
   }
 
   private async assertWorkflowOwnership(

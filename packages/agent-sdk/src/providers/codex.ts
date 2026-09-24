@@ -101,7 +101,7 @@ export class CodexAgentProvider extends CliCodingAgentProvider {
       ...options,
       key: options.key ?? 'codex',
       name: options.name ?? 'Codex',
-      healthArgs: ['login', 'status'],
+      healthArgs: ['--version'],
       buildArgs: (context, schemaFile, outputFile) => [
         'exec',
         '--ignore-user-config',

@@ -5,6 +5,7 @@ import { createAgentProcessor } from './agent.processor';
 describe('agent cancellation processor', () => {
   it('calls the registered provider for a cancellation-claimed run', async () => {
     const cancelRun = vi.fn().mockResolvedValue(undefined);
+    const cancelRuntime = vi.fn().mockResolvedValue(undefined);
     const get = vi.fn().mockReturnValue({ cancelRun });
     const processor = createAgentProcessor({
       prisma: {
@@ -17,6 +18,7 @@ describe('agent cancellation processor', () => {
         },
       },
       registry: { get },
+      executionRuntime: { cancel: cancelRuntime },
     } as never);
 
     await expect(
@@ -24,6 +26,7 @@ describe('agent cancellation processor', () => {
     ).resolves.toEqual({ cancelled: true });
     expect(get).toHaveBeenCalledWith('codex');
     expect(cancelRun).toHaveBeenCalledWith('agent-1');
+    expect(cancelRuntime).toHaveBeenCalledWith('agent-1');
   });
 
   it.each([

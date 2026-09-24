@@ -1,12 +1,13 @@
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { CommandRunner, RunCommandInput } from '@engloop/git';
 import { AgentRole, type CommandResult } from '@engloop/types';
 import { makeAgentTaskContext } from '@engloop/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentOutputInvalidError,
+  type AgentCommandExecutor,
+  type AgentCommandInput,
   AgentProviderRegistry,
   ClaudeCodeAgentProvider,
   claudeImplementerCommandRules,
@@ -55,7 +56,7 @@ const validPlan = {
   openQuestions: [],
 };
 
-const commandResult = (input: RunCommandInput, stdout: string, stderr = ''): CommandResult => ({
+const commandResult = (input: AgentCommandInput, stdout: string, stderr = ''): CommandResult => ({
   command: input.command,
   args: [...input.args],
   cwd: input.cwd,
@@ -70,13 +71,33 @@ const commandResult = (input: RunCommandInput, stdout: string, stderr = ''): Com
   durationMs: 1,
 });
 
-const fakeRunner = (run: (input: RunCommandInput) => Promise<CommandResult>): CommandRunner =>
+const fakeRunner = (
+  run: (input: AgentCommandInput) => Promise<CommandResult>,
+): AgentCommandExecutor =>
   ({
     isAllowed: vi.fn(() => true),
     run: vi.fn(run),
-  }) as unknown as CommandRunner;
+  }) as AgentCommandExecutor;
 
 describe('CodexAgentProvider', () => {
+  it('uses a separate health command scope without a run id', async () => {
+    const runner = fakeRunner(async (input) => commandResult(input, 'codex 1.0'));
+    const provider = new CodexAgentProvider({
+      cliPath: 'codex',
+      model: 'gpt-test',
+      executor: runner,
+    });
+
+    await expect(provider.healthCheck()).resolves.toMatchObject({ healthy: true });
+    expect(vi.mocked(runner.run).mock.calls[0]?.[0]).toMatchObject({
+      scope: 'health',
+      command: 'codex',
+      args: ['--version'],
+    });
+    expect(vi.mocked(runner.run).mock.calls[0]?.[0]).not.toHaveProperty('runId');
+    expect(vi.mocked(runner.run).mock.calls[0]?.[0].args).not.toContain('login');
+  });
+
   it('decodes JSONL session, usage, and final assistant output', async () => {
     const outputFile = join(await makeTemporaryDirectory(), 'missing-output.json');
     const stdout = [
@@ -134,7 +155,7 @@ describe('CodexAgentProvider', () => {
       cliPath: 'node',
       cliArgsPrefix: ['codex-entry.js'],
       model: 'gpt-test',
-      runner,
+      executor: runner,
     });
 
     const result = await provider.startRun(
@@ -144,6 +165,10 @@ describe('CodexAgentProvider', () => {
     expect(result.status).toBe('SUCCEEDED');
     expect(result.output).toEqual(validPlan);
     expect(result.sessionId).toBe('thread-from-run');
+    expect(vi.mocked(runner.run).mock.calls[0]?.[0]).toMatchObject({
+      scope: 'agent',
+      runId: expect.any(String),
+    });
     expect(vi.mocked(runner.run).mock.calls[0]?.[0].args.slice(0, 2)).toEqual([
       'codex-entry.js',
       'exec',
@@ -175,7 +200,11 @@ describe('CodexAgentProvider', () => {
   it('rejects malformed JSONL transport output', async () => {
     const workspacePath = await makeTemporaryDirectory();
     const runner = fakeRunner(async (input) => commandResult(input, 'not-json'));
-    const provider = new CodexAgentProvider({ cliPath: 'codex', model: 'gpt-test', runner });
+    const provider = new CodexAgentProvider({
+      cliPath: 'codex',
+      model: 'gpt-test',
+      executor: runner,
+    });
 
     await expect(
       provider.startRun(makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath })),
@@ -195,7 +224,11 @@ describe('CodexAgentProvider', () => {
         ].join('\n'),
       );
     });
-    const provider = new CodexAgentProvider({ cliPath: 'codex', model: 'gpt-test', runner });
+    const provider = new CodexAgentProvider({
+      cliPath: 'codex',
+      model: 'gpt-test',
+      executor: runner,
+    });
     const base = makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath });
     const result = await provider.startRun({
       ...base,
@@ -209,6 +242,30 @@ describe('CodexAgentProvider', () => {
 });
 
 describe('ClaudeCodeAgentProvider', () => {
+  it('scopes resumed CLI execution to the continuation run id', async () => {
+    const workspacePath = await makeTemporaryDirectory();
+    const runner = fakeRunner(async (input) =>
+      commandResult(
+        input,
+        JSON.stringify({ type: 'result', structured_output: validPlan, session_id: 'session-2' }),
+      ),
+    );
+    const provider = new ClaudeCodeAgentProvider({
+      cliPath: 'claude',
+      model: 'claude-test',
+      executor: runner,
+    });
+    const context = makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath });
+
+    await provider.resumeRun('session-1', context);
+
+    expect(vi.mocked(runner.run).mock.calls[0]?.[0]).toMatchObject({
+      scope: 'agent',
+      runId: context.runId,
+      args: expect.arrayContaining(['--resume', 'session-1']),
+    });
+  });
+
   it('decodes structured output, session, usage, cache tokens, and exact cost', () => {
     const decoded = decodeClaudeOutput({
       stdout: JSON.stringify({
@@ -260,7 +317,7 @@ describe('ClaudeCodeAgentProvider', () => {
     const provider = new ClaudeCodeAgentProvider({
       cliPath: 'claude',
       model: 'claude-test',
-      runner,
+      executor: runner,
     });
 
     const result = await provider.startRun(
@@ -289,7 +346,7 @@ describe('ClaudeCodeAgentProvider', () => {
     const provider = new ClaudeCodeAgentProvider({
       cliPath: 'claude',
       model: 'claude-test',
-      runner,
+      executor: runner,
     });
 
     await provider.startRun(makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath }));
@@ -312,7 +369,7 @@ describe('ClaudeCodeAgentProvider', () => {
     const provider = new ClaudeCodeAgentProvider({
       cliPath: 'claude',
       model: 'claude-test',
-      runner,
+      executor: runner,
     });
 
     await provider
@@ -346,7 +403,7 @@ describe('ClaudeCodeAgentProvider', () => {
       new ClaudeCodeAgentProvider({
         cliPath: 'claude',
         model: 'claude-test',
-        runner: fakeRunner(async (input) => commandResult(input, '')),
+        executor: fakeRunner(async (input) => commandResult(input, '')),
       }),
     );
     for (const role of [
@@ -367,7 +424,7 @@ describe('ClaudeCodeAgentProvider', () => {
     const provider = new ClaudeCodeAgentProvider({
       cliPath: 'claude',
       model: 'claude-test',
-      runner,
+      executor: runner,
     });
 
     await expect(
@@ -386,7 +443,7 @@ describe('ClaudeCodeAgentProvider', () => {
     const provider = new ClaudeCodeAgentProvider({
       cliPath: 'claude',
       model: 'claude-test',
-      runner,
+      executor: runner,
     });
 
     await expect(

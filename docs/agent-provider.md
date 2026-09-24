@@ -42,12 +42,37 @@ Configure it per organization or per project — the Agent Team screen writes
 | Adapter                   | Kind          | State                                                                                                                                                             |
 | ------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MockAgentProvider`       | `MOCK`        | **Fully implemented.** Simulates planning, implementation, review, fixing, latency, failure injection and findings. Requires no credentials.                      |
-| `CodexAgentProvider`      | `CODEX`       | Implemented with stdin requests, OpenAI-compatible JSON Schema output, session/usage decoding and workspace-write sandboxing.                                     |
+| `CodexAgentProvider`      | `CODEX`       | Implemented with stdin requests, OpenAI-compatible JSON Schema output, session/usage decoding and the CLI's `workspace-write` flag.                               |
 | `ClaudeCodeAgentProvider` | `CLAUDE_CODE` | Implemented with stdin requests, JSON result envelopes, session/usage decoding, schema validation and role-based permissions (below). Serves every workflow role. |
 
-Both CLI adapters extend `CliCodingAgentProvider`, which owns the safety rules:
-allowlisted executable, isolated cwd, timeout, structured-output validation. A
-new CLI agent only supplies its argv builders.
+Both CLI adapters extend `CliCodingAgentProvider`. They use the exported narrow
+`AgentCommandExecutor` contract rather than depending on the concrete git
+`CommandRunner`. A new CLI agent only supplies its argv builders.
+
+## Execution runtime seam
+
+The worker owns `AgentExecutionRuntime`. The current adapter is
+`HostProcessExecutionRuntime`, reported honestly as:
+
+```text
+kind: HOST_PROCESS
+isolated: false
+```
+
+It creates a run-id-scoped session immediately before CLI invocation, restricts
+the cwd to that run's registered worktree, intersects the per-run command list
+with the global `CommandRunner` allowlist, caps the requested timeout, attaches
+only that run's credential environment, and clears the environment on release.
+Cancellation and worker shutdown abort active session signals. Health probes use
+a separate scope and never receive run credentials. Global Codex readiness runs
+`codex --version`, which proves binary availability only. Authentication is
+resolved per organization immediately before each run, so global readiness does
+not validate every organization's stored key or CLI login.
+
+`HOST_PROCESS` is not a sandbox. The child still runs as the worker OS user and
+there is no filesystem namespace, network policy, CPU, memory, disk or PID
+isolation. The raw `CommandRunner` remains available only to trusted worker git
+and deterministic-test services.
 
 ## Claude Code permissions
 
@@ -71,7 +96,7 @@ On Windows, point `CLAUDE_CODE_CLI_PATH` at the native `claude.exe` (for example
 
 ## Credentials: stored key first, CLI login second
 
-Provider API keys are configured in the UI (**Providers** → *Set key*, owners and
+Provider API keys are configured in the UI (**Providers** → _Set key_, owners and
 administrators only) and stored per organization as AES-256-GCM ciphertext on
 `agent_providers`. The process environment is never consulted for a key.
 
@@ -87,11 +112,14 @@ back to the login.
 
 At run time `AgentExecutor` resolves the key through `CredentialResolver`
 (`apps/worker/src/services/credential-resolver.ts`), which decrypts it with
-`SECRETS_ENCRYPTION_KEY` and caches it briefly. The decrypted value is primed into
-`ProviderCredentialStore` only for the spawn itself, because the SDK reads its
-`env` callback synchronously, and is cleared in a `finally`. A credential that
-cannot be decrypted fails the run with `AGENT_PROVIDER_UNAVAILABLE` rather than
-silently downgrading to the CLI login.
+`SECRETS_ENCRYPTION_KEY` and caches it briefly. Immediately before invoking a CLI
+provider, `AgentExecutor` prepares `HostProcessExecutionRuntime` for that run and
+passes the resolved credential in the run-scoped `secretEnv`. It always releases
+the runtime session in a `finally`, which clears the session and its credential
+environment. The non-secret audit descriptor records the credential source and
+applied limits, never secret values. A credential that cannot be decrypted fails
+the run with `AGENT_PROVIDER_UNAVAILABLE` rather than silently downgrading to the
+CLI login. The current adapter remains `HOST_PROCESS` with `isolated: false`.
 
 Plaintext is never returned by the API: a write echoes a redacted preview
 (`sk-••••••••mnop`) once, and reads report only `hasCredential` and

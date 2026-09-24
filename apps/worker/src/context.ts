@@ -18,7 +18,7 @@ import { GitManager } from './services/git-manager';
 import { PlanMaterializer } from './services/plan-materializer';
 import { UsageRecorder } from './services/usage-recorder';
 import { CredentialResolver } from './services/credential-resolver';
-import { ProviderCredentialStore } from './services/provider-credential-store';
+import { HostProcessExecutionRuntime, type AgentExecutionRuntime } from './execution';
 
 export interface WorkerContext {
   env: Env;
@@ -26,6 +26,7 @@ export interface WorkerContext {
   prisma: PrismaClient;
   registry: AgentProviderRegistry;
   runner: CommandRunner;
+  executionRuntime: AgentExecutionRuntime;
   git: GitService;
   worktrees: WorktreeManager;
   audit: AuditWriter;
@@ -38,8 +39,6 @@ export interface WorkerContext {
   plans: PlanMaterializer;
   /** Decrypts each organization's UI-configured provider keys. */
   credentials: CredentialResolver;
-  /** Holds the key for an in-flight spawn; see ProviderCredentialStore. */
-  credentialStore: ProviderCredentialStore;
 }
 
 /**
@@ -84,7 +83,10 @@ export const createWorkerContext = (): WorkerContext => {
       : undefined;
 
   const registry = new AgentProviderRegistry(logger);
-  const credentialStore = new ProviderCredentialStore();
+  const executionRuntime = new HostProcessExecutionRuntime({
+    runner,
+    healthEnv: env.CODEX_HOME ? { CODEX_HOME: env.CODEX_HOME } : undefined,
+  });
   const credentials = new CredentialResolver({
     prisma,
     cipher: new SecretCipher(env.SECRETS_ENCRYPTION_KEY),
@@ -105,19 +107,16 @@ export const createWorkerContext = (): WorkerContext => {
       new CodexAgentProvider({
         cliPath: env.CODEX_CLI_PATH,
         model: env.CODEX_MODEL,
-        runner,
+        executor: executionRuntime,
         logger,
-        // Read at spawn time: the executor primes the running organization's key.
-        env: (): Record<string, string> => credentialStore.env('codex'),
       }),
     )
     .register(
       new ClaudeCodeAgentProvider({
         cliPath: env.CLAUDE_CODE_CLI_PATH,
         model: env.CLAUDE_CODE_MODEL,
-        runner,
+        executor: executionRuntime,
         logger,
-        env: (): Record<string, string> => credentialStore.env('claude-code'),
       }),
     );
 
@@ -133,7 +132,7 @@ export const createWorkerContext = (): WorkerContext => {
     usage,
     contextBuilder,
     credentials,
-    credentialStore,
+    executionRuntime,
   });
   const tests = new TestRunner({ prisma, runner, logger, env, audit });
   const reviews = new ReviewEngine({ prisma, logger });
@@ -146,6 +145,7 @@ export const createWorkerContext = (): WorkerContext => {
     prisma,
     registry,
     runner,
+    executionRuntime,
     git,
     worktrees,
     audit,
@@ -157,6 +157,5 @@ export const createWorkerContext = (): WorkerContext => {
     gitManager,
     plans,
     credentials,
-    credentialStore,
   };
 };

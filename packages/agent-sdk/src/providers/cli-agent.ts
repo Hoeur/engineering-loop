@@ -1,7 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CommandRunner } from '@engloop/git';
 import { silentLogger, type EngLoopLogger } from '@engloop/logger';
 import {
   ROLE_OUTPUT_SCHEMAS,
@@ -11,7 +10,7 @@ import {
   type AgentRunResult,
   type AgentTaskContext,
 } from '@engloop/schemas';
-import { AgentRole, type AgentProviderKind } from '@engloop/types';
+import { AgentRole, type AgentProviderKind, type CommandResult } from '@engloop/types';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { estimateCostUsd } from '../cost';
 import {
@@ -27,7 +26,7 @@ export interface CliAgentOptions {
   cliPath: string;
   cliArgsPrefix?: readonly string[];
   model: string;
-  runner: CommandRunner;
+  executor: AgentCommandExecutor;
   logger?: EngLoopLogger;
   buildArgs: (
     context: AgentTaskContext,
@@ -43,10 +42,29 @@ export interface CliAgentOptions {
     schemaJson: string,
   ) => string[];
   decodeOutput?: (input: CliDecodeInput) => CliDecodedOutput | Promise<CliDecodedOutput>;
-  env?: () => Record<string, string>;
   /** Non-mutating command that proves the CLI is authenticated and usable. */
   healthArgs?: readonly string[];
   capabilities?: Partial<ProviderCapabilities>;
+}
+
+export interface AgentCommandBaseInput {
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  stdin?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  label?: string;
+}
+
+export type AgentCommandInput =
+  | (AgentCommandBaseInput & { scope: 'health' })
+  | (AgentCommandBaseInput & { scope: 'agent'; runId: string });
+
+/** Narrow process-execution seam used by CLI providers. */
+export interface AgentCommandExecutor {
+  isAllowed(command: string): boolean;
+  run(input: AgentCommandInput): Promise<CommandResult>;
 }
 
 export interface CliDecodeInput {
@@ -101,19 +119,19 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
   async healthCheck(): Promise<ProviderHealth> {
     const startedAt = Date.now();
     try {
-      if (!this.options.runner.isAllowed(this.options.cliPath)) {
+      if (!this.options.executor.isAllowed(this.options.cliPath)) {
         return {
           healthy: false,
           detail: `"${this.options.cliPath}" is not in COMMAND_ALLOWLIST`,
           checkedAt: new Date().toISOString(),
         };
       }
-      const result = await this.options.runner.run({
+      const result = await this.options.executor.run({
+        scope: 'health',
         command: this.options.cliPath,
         args: [...this.cliArgsPrefix, ...(this.options.healthArgs ?? ['--version'])],
         cwd: process.cwd(),
         timeoutMs: 10_000,
-        env: this.options.env?.(),
         label: `${this.key} health`,
       });
       return {
@@ -236,14 +254,15 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
     const controller = new AbortController();
     this.active.set(context.runId, controller);
     try {
-      const result = await this.options.runner.run({
+      const result = await this.options.executor.run({
+        scope: 'agent',
+        runId: context.runId,
         command: this.options.cliPath,
         args: [...this.cliArgsPrefix, ...args],
         cwd: context.workspacePath,
         stdin,
         signal: controller.signal,
         timeoutMs: context.budget.timeoutMs,
-        env: this.options.env?.(),
         label: `${this.key}:${context.role}`,
       });
       raw = result.stdout;
@@ -256,7 +275,8 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
         });
       }
     } catch (error) {
-      const cancelled = this.cancelled.delete(context.runId) ||
+      const cancelled =
+        this.cancelled.delete(context.runId) ||
         (error instanceof Error && error.name === 'AbortError');
       if (cancelled) {
         return this.envelope(context, startedAt, 'CANCELLED', null, raw, {

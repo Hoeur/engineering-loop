@@ -1,6 +1,6 @@
 # Plan — EngLoop delivery sequence (P0–P6)
 
-**Status:** active index · **Created:** 2026-09-19 · **Updated:** 2026-09-20
+**Status:** active index · **Created:** 2026-09-19 · **Updated:** 2026-09-24
 **Source:** `docs/next-plan.md`
 **Supersedes:** `.loop/plan-real-ui-qa.md` as the *active* index. That plan is not
 cancelled — it is rescheduled to **P3**, and its task specs stay valid.
@@ -26,7 +26,7 @@ That is the whole reason for re-indexing rather than continuing.
 | Priority | Phase | Depends on | Status |
 | --- | --- | --- | --- |
 | P0 | Restore evidence baseline | — | **done** — all criteria met 2026-09-20 |
-| P1 | Sandboxed agent execution | P0 | not started |
+| P1 | Sandboxed agent execution | P0 | **in progress** — runtime seam + non-isolated `HOST_PROCESS` only |
 | P2 | Real provider and GitHub delivery | P0, preferably P1 | not started |
 | P3 | Real UI QA and live run updates | P0, P2 | **partially done** — see below |
 | P4 | Durable and parallel orchestration | P1, P2 | not started |
@@ -96,10 +96,13 @@ Still open, and now **P3 work**: `.loop/02-screenshot-capture/`,
 valid; read `.loop/plan-real-ui-qa.md` §"From 01 → 02" before starting any of
 them.
 
-**P1 resolves task 02's biggest open question.** Task 02 asks whether Playwright
-runs in-process, as an allowlisted subprocess, or is deferred. P1 introduces an
-execution-runtime port with one isolated boundary per run — which is the answer.
-Task 02 should be re-planned against that port rather than deciding independently.
+**The current P1 slice does not resolve task 02's biggest open question.** Task
+02 asks whether Playwright runs in-process, as an allowlisted subprocess, or is
+deferred. P1 now has an execution-runtime port, but its only adapter is
+`HOST_PROCESS` with `isolated: false`; it runs children as the worker OS user.
+That seam does not determine safe Playwright placement. Task 02 remains open and
+must be re-planned when a future isolated runtime adapter provides a real
+containment boundary.
 
 ---
 

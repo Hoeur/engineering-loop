@@ -24,7 +24,8 @@ const FINISHED_WITHOUT_CANCEL = new Set<AgentRunStatus>([
  * completion writes are conditional, so another process still cannot resurrect
  * the run or persist post-cancellation output.
  */
-export const createAgentProcessor = (worker: WorkerContext) =>
+export const createAgentProcessor =
+  (worker: WorkerContext) =>
   async (job: Job<CancelAgentPayload>): Promise<unknown> => {
     if (job.name !== CANCEL_AGENT_JOB) return { ignored: true };
 
@@ -41,6 +42,6 @@ export const createAgentProcessor = (worker: WorkerContext) =>
     }
 
     const provider = worker.registry.get(run.providerKey);
-    await provider.cancelRun(run.id);
+    await Promise.all([provider.cancelRun(run.id), worker.executionRuntime.cancel(run.id)]);
     return { cancelled: true };
   };

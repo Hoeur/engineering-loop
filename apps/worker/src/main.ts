@@ -8,6 +8,7 @@ import { createReviewProcessor } from './processors/review.processor';
 import { createSchedulerProcessor } from './processors/scheduler.processor';
 import { createAgentProcessor } from './processors/agent.processor';
 import { persistProviderHealth, startHealthServer } from './health';
+import { registerShutdownSignals, stopWorkerExecution } from './shutdown';
 
 async function bootstrap(): Promise<void> {
   const worker = createWorkerContext();
@@ -73,6 +74,18 @@ async function bootstrap(): Promise<void> {
   });
 
   const health = startHealthServer(worker, env.WORKER_HEALTH_PORT);
+  registerShutdownSignals(process, async (signal): Promise<void> => {
+    logger.info({ signal }, 'worker.shutting_down');
+    await stopWorkerExecution({
+      workers,
+      executionRuntime: worker.executionRuntime,
+      workflowQueue,
+    });
+    health.close();
+    connection.disconnect();
+    await worker.prisma.$disconnect();
+    process.exit(0);
+  });
 
   const providerHealth = await worker.registry.healthCheckAll();
   try {
@@ -97,19 +110,6 @@ async function bootstrap(): Promise<void> {
     },
     'worker.started',
   );
-
-  const shutdown = async (signal: string): Promise<void> => {
-    logger.info({ signal }, 'worker.shutting_down');
-    health.close();
-    await Promise.all(workers.map((instance) => instance.close()));
-    await workflowQueue.close();
-    connection.disconnect();
-    await worker.prisma.$disconnect();
-    process.exit(0);
-  };
-
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
 void bootstrap().catch((error: unknown) => {

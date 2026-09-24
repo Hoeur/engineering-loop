@@ -85,6 +85,10 @@ egress restriction.
 
 Tasks:
 
+- [x] Add the worker-owned execution-runtime port and `HOST_PROCESS` adapter for per-run cwd,
+      command, timeout, credential-environment, cancellation and cleanup scoping. This adapter runs
+      as the worker OS user and is **not a sandbox**; none of the containment tasks below are
+      satisfied by it.
 - [ ] One container per agent run, mounting only that run's worktree
 - [ ] CPU, memory and disk caps
 - [ ] Egress allowlist for the agent process
