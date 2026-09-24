@@ -132,6 +132,27 @@ describe('tenant-aware direct controllers', () => {
 });
 
 describe('tenant-aware task routes', () => {
+  it('forwards an optional task idempotency header without breaking existing clients', () => {
+    const create = vi.fn();
+    const controller = new TasksController(
+      { create } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const body = { projectId: 'project-1', title: 'Create safely' } as never;
+    const key = '80da1063-8f78-47ea-9a10-08ddc8c0c172';
+
+    controller.create(body, 'user-1', 'org-1', key);
+    controller.create(body, 'user-1', 'org-1', undefined);
+
+    expect(create).toHaveBeenNthCalledWith(1, 'org-1', body, 'user-1', key);
+    expect(create).toHaveBeenNthCalledWith(2, 'org-1', body, 'user-1', undefined);
+    expect(() => controller.create(body, 'user-1', 'org-1', 'not-a-uuid')).toThrowError(
+      expect.objectContaining({ code: 'VALIDATION_FAILED' }),
+    );
+  });
+
   it('keeps task reads scoped and passes organization ownership to nested run services', async () => {
     const taskList = vi.fn();
     const taskFindOne = vi.fn();

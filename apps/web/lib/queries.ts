@@ -246,10 +246,23 @@ export const useBoard = (projectId: string) =>
     refetchInterval: 20_000,
   });
 
+export const postCreateTask = ({
+  body,
+  idempotencyKey,
+}: {
+  body: CreateTaskInput;
+  idempotencyKey: string;
+}): Promise<TaskSummary> =>
+  unwrap(
+    api.post<TaskSummary>('/tasks', body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
+  );
+
 export const useCreateTask = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateTaskInput) => unwrap(api.post<TaskSummary>('/tasks', body)),
+    mutationFn: postCreateTask,
     onSuccess: (task) => {
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.board(task.projectId) });

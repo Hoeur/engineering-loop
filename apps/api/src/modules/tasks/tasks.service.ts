@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   ApiErrorCode,
   AuditAction,
@@ -22,7 +22,13 @@ import type {
   RunTaskDto,
   UpdateTaskDto,
 } from '@engloop/schemas';
-import { retryOnUniqueViolation, type Prisma, type Task } from '@engloop/db';
+import {
+  isPrismaError,
+  retryOnUniqueViolation,
+  UNIQUE_VIOLATION,
+  type Prisma,
+  type Task,
+} from '@engloop/db';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EventBus } from '../../infrastructure/events/event-bus';
 import { WORKFLOW_ORCHESTRATOR } from '../../infrastructure/queue/bullmq-orchestrator';
@@ -50,6 +56,24 @@ const TASK_LIST_INCLUDE = {
 
 const SORTABLE = ['createdAt', 'updatedAt', 'lastActivityAt', 'priority', 'status', 'key'] as const;
 const RETRYABLE_TASK_STATUSES = new Set<TaskStatus>(HUMAN_ATTENTION_STATUSES);
+
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalize(entry)]),
+    );
+  }
+  return value;
+};
+
+const taskCreationHash = (dto: CreateTaskDto): string =>
+  createHash('sha256')
+    .update(JSON.stringify(canonicalize(dto)))
+    .digest('hex');
 
 @Injectable()
 export class TasksService {
@@ -223,73 +247,190 @@ export class TasksService {
     return `${project.key}-${String(project.taskSequence)}`;
   }
 
-  async create(organizationId: string, dto: CreateTaskDto, createdById?: string): Promise<Task> {
+  private async createTaskInTransaction(
+    tx: Prisma.TransactionClient,
+    dto: CreateTaskDto,
+    projectOrganizationId: string,
+    maxTaskAttempts: number,
+    createdById?: string,
+  ): Promise<Task> {
+    const key = await this.nextKey(tx, dto.projectId);
+    const created = await tx.task.create({
+      data: {
+        projectId: dto.projectId,
+        repositoryId: dto.repositoryId ?? null,
+        epicId: dto.epicId ?? null,
+        featureId: dto.featureId ?? null,
+        parentTaskId: dto.parentTaskId ?? null,
+        key,
+        title: dto.title,
+        description: dto.description,
+        objective: dto.objective,
+        type: dto.type,
+        priority: dto.priority,
+        riskLevel: dto.riskLevel,
+        acceptanceCriteria: dto.acceptanceCriteria,
+        implementationNotes: dto.implementationNotes,
+        suggestedFiles: dto.suggestedFiles,
+        requiredChecks: dto.requiredChecks as CheckType[],
+        maxAttempts: dto.maxAttempts || maxTaskAttempts,
+        assignedAgentId: dto.assignedAgentId ?? null,
+        createdById: createdById ?? null,
+      },
+    });
+
+    if (dto.dependsOnTaskIds.length > 0) {
+      await tx.taskDependency.createMany({
+        data: dto.dependsOnTaskIds.map((dependsOnTaskId) => ({
+          taskId: created.id,
+          dependsOnTaskId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    await this.audit.recordInTransaction(tx, {
+      organizationId: projectOrganizationId,
+      projectId: dto.projectId,
+      taskId: created.id,
+      action: AuditAction.TASK_TRANSITIONED,
+      entityType: 'task',
+      entityId: created.id,
+      summary: `Created ${created.key}: ${created.title}`,
+      metadata: { type: created.type, priority: created.priority },
+    });
+
+    return created;
+  }
+
+  private async replayTaskCreation(
+    organizationId: string,
+    idempotencyKey: string,
+    requestHash: string,
+  ): Promise<Task | null> {
+    const request = await this.prisma.taskCreationRequest.findUnique({
+      where: { organizationId_key: { organizationId, key: idempotencyKey } },
+    });
+    if (!request) return null;
+    if (request.requestHash !== requestHash) {
+      throw AppError.conflict(
+        ApiErrorCode.TASK_IDEMPOTENCY_CONFLICT,
+        'The idempotency key was already used with a different task request',
+      );
+    }
+    if (!request.taskId) {
+      throw AppError.internal('The task creation request is missing its task');
+    }
+
+    const task = await this.prisma.task.findFirst({
+      where: { id: request.taskId, project: { organizationId } },
+    });
+    if (!task) {
+      throw AppError.internal('The task creation request does not reference an owned task');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.taskCreationRequest.updateMany({
+        where: {
+          id: request.id,
+          organizationId,
+          requestHash,
+          taskId: task.id,
+        },
+        data: { replayCount: { increment: 1 }, lastReplayedAt: new Date() },
+      });
+      if (updated.count !== 1) {
+        throw AppError.internal('The task creation replay could not be recorded');
+      }
+
+      await this.audit.recordInTransaction(tx, {
+        organizationId,
+        projectId: task.projectId,
+        taskId: task.id,
+        action: AuditAction.TASK_TRANSITIONED,
+        entityType: 'task',
+        entityId: task.id,
+        summary: `Replayed creation response for ${task.key}`,
+        metadata: { idempotentReplay: true },
+      });
+    });
+    return task;
+  }
+
+  async create(
+    organizationId: string,
+    dto: CreateTaskDto,
+    createdById?: string,
+    idempotencyKey?: string,
+  ): Promise<Task> {
     const project = await this.prisma.project.findFirst({
       where: { id: dto.projectId, organizationId },
       select: { id: true, organizationId: true, maxTaskAttempts: true },
     });
     if (!project) throw AppError.notFound('Project', dto.projectId);
+
+    const requestHash = idempotencyKey ? taskCreationHash(dto) : undefined;
+    if (idempotencyKey && requestHash) {
+      const replay = await this.replayTaskCreation(organizationId, idempotencyKey, requestHash);
+      if (replay) return replay;
+    }
+
     await this.validateTaskReferences(organizationId, dto.projectId, dto);
 
-    // Retried as a whole: a key collision means a concurrent create took this
-    // sequence number, and the retry re-reads the incremented one.
-    const task = await retryOnUniqueViolation(() =>
-      this.prisma.$transaction(async (tx) => {
-        const key = await this.nextKey(tx, dto.projectId);
-        const created = await tx.task.create({
-          data: {
-            projectId: dto.projectId,
-            repositoryId: dto.repositoryId ?? null,
-            epicId: dto.epicId ?? null,
-            featureId: dto.featureId ?? null,
-            parentTaskId: dto.parentTaskId ?? null,
-            key,
-            title: dto.title,
-            description: dto.description,
-            objective: dto.objective,
-            type: dto.type,
-            priority: dto.priority,
-            riskLevel: dto.riskLevel,
-            acceptanceCriteria: dto.acceptanceCriteria,
-            implementationNotes: dto.implementationNotes,
-            suggestedFiles: dto.suggestedFiles,
-            requiredChecks: dto.requiredChecks as CheckType[],
-            maxAttempts: dto.maxAttempts || project.maxTaskAttempts,
-            assignedAgentId: dto.assignedAgentId ?? null,
-            createdById: createdById ?? null,
-          },
-        });
-
-        if (dto.dependsOnTaskIds.length > 0) {
-          await tx.taskDependency.createMany({
-            data: dto.dependsOnTaskIds.map((dependsOnTaskId) => ({
-              taskId: created.id,
-              dependsOnTaskId,
-            })),
-            skipDuplicates: true,
+    let task: Task;
+    if (!idempotencyKey || !requestHash) {
+      // Existing clients remain compatible and retain project-key collision retries.
+      task = await retryOnUniqueViolation(() =>
+        this.prisma.$transaction((tx) =>
+          this.createTaskInTransaction(
+            tx,
+            dto,
+            project.organizationId,
+            project.maxTaskAttempts,
+            createdById,
+          ),
+        ),
+      );
+    } else {
+      let created: Task | undefined;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          created = await this.prisma.$transaction(async (tx) => {
+            const request = await tx.taskCreationRequest.create({
+              data: { organizationId, key: idempotencyKey, requestHash },
+            });
+            const nextTask = await this.createTaskInTransaction(
+              tx,
+              dto,
+              project.organizationId,
+              project.maxTaskAttempts,
+              createdById,
+            );
+            await tx.taskCreationRequest.update({
+              where: { id: request.id },
+              data: { taskId: nextTask.id },
+            });
+            return nextTask;
           });
+          break;
+        } catch (error) {
+          if (!isPrismaError(error, UNIQUE_VIOLATION)) throw error;
+          const replay = await this.replayTaskCreation(organizationId, idempotencyKey, requestHash);
+          if (replay) return replay;
+          if (attempt === 3) throw error;
         }
+      }
+      if (!created) throw AppError.internal('Task creation did not produce a task');
+      task = created;
+    }
 
-        return created;
-      }),
-    );
-
+    // The event bus is process-local, so publish only after the durable transaction.
+    // Idempotent replays return before this point and never republish TASK_CREATED.
     this.events.publish(DomainEventName.TASK_CREATED, {
       taskId: task.id,
       taskKey: task.key,
       title: task.title,
       createdBy: createdById ?? 'system',
-    });
-
-    await this.audit.recordSafe({
-      organizationId: project.organizationId,
-      projectId: project.id,
-      taskId: task.id,
-      action: AuditAction.TASK_TRANSITIONED,
-      entityType: 'task',
-      entityId: task.id,
-      summary: `Created ${task.key}: ${task.title}`,
-      metadata: { type: task.type, priority: task.priority },
     });
 
     return task;

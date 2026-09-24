@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
   approveTaskSchema,
@@ -9,6 +9,7 @@ import {
   planTaskSchema,
   retryTaskSchema,
   runTaskSchema,
+  taskIdempotencyKeySchema,
   transitionTaskSchema,
   triggerReviewSchema,
   triggerTestRunSchema,
@@ -51,8 +52,13 @@ export class TasksController {
     @Body(zodPipe(createTaskSchema)) body: z.infer<typeof createTaskSchema>,
     @CurrentUser('id') userId: string,
     @CurrentUser('organizationId') organizationId: string,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.tasks.create(organizationId, body, userId);
+    const parsedKey = zodPipe(taskIdempotencyKeySchema.optional()).transform(idempotencyKey, {
+      type: 'custom',
+      data: 'Idempotency-Key',
+    });
+    return this.tasks.create(organizationId, body, userId, parsedKey);
   }
 
   @Get(':id')

@@ -5,6 +5,7 @@ import type { RepositorySummary, TaskSummary } from '@/lib/types';
 import {
   buildCreateTaskInput,
   emptyNewTaskForm,
+  isDefinitiveCreateFailure,
   NewTaskDialog,
   toLines,
   validateNewTask,
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   createTask: vi.fn(),
   runTask: vi.fn(),
   createMutate: vi.fn(),
+  createReset: vi.fn(),
   runMutate: vi.fn(),
 }));
 
@@ -46,6 +48,7 @@ describe('NewTaskDialog', () => {
     vi.clearAllMocks();
     mocks.createTask.mockReturnValue({
       mutate: mocks.createMutate,
+      reset: mocks.createReset,
       isPending: false,
       isError: false,
       error: null,
@@ -83,11 +86,14 @@ describe('NewTaskDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create and start' }));
 
     expect(mocks.createMutate).toHaveBeenCalledOnce();
-    const [body, options] = mocks.createMutate.mock.calls[0] as [
-      unknown,
+    const [request, options] = mocks.createMutate.mock.calls[0] as [
+      { body: unknown; idempotencyKey: string },
       { onSuccess: (task: TaskSummary) => void },
     ];
-    expect(body).toEqual({
+    expect(request.idempotencyKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(request.body).toEqual({
       projectId: 'project-1',
       repositoryId: 'repo-1',
       title: 'Health check: make lint and typecheck pass on main',
@@ -228,6 +234,7 @@ describe('NewTaskDialog', () => {
   it('prevents dialog dismissal while an operation is pending', () => {
     mocks.createTask.mockReturnValue({
       mutate: mocks.createMutate,
+      reset: mocks.createReset,
       isPending: true,
       isError: false,
       error: null,
@@ -242,9 +249,10 @@ describe('NewTaskDialog', () => {
   it('shows a create error inline and does not attempt to start a workflow', () => {
     mocks.createTask.mockReturnValue({
       mutate: mocks.createMutate,
+      reset: mocks.createReset,
       isPending: false,
       isError: true,
-      error: new Error('Project not found'),
+      error: new ApiError('NOT_FOUND', 'Project not found', 404),
     });
     openDialog();
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Add health endpoint' } });
@@ -254,9 +262,94 @@ describe('NewTaskDialog', () => {
     expect(mocks.createMutate).toHaveBeenCalledOnce();
     expect(mocks.runMutate).not.toHaveBeenCalled();
   });
+
+  it('clears a definitive 4xx attempt so a corrected retry gets new payload and key', () => {
+    openDialog();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Original task title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create and start' }));
+
+    const firstRequest = mocks.createMutate.mock.calls[0]?.[0] as {
+      body: { title: string };
+      idempotencyKey: string;
+    };
+    const firstOptions = mocks.createMutate.mock.calls[0]?.[1] as {
+      onError: (error: Error) => void;
+    };
+    act(() => firstOptions.onError(new ApiError('VALIDATION_FAILED', 'Fix the title', 422)));
+
+    expect(screen.getByLabelText('Title')).not.toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Corrected task title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create and start' }));
+
+    const retryRequest = mocks.createMutate.mock.calls[1]?.[0] as typeof firstRequest;
+    expect(retryRequest.idempotencyKey).not.toBe(firstRequest.idempotencyKey);
+    expect(retryRequest.body.title).toBe('Corrected task title');
+  });
+
+  it('freezes an ambiguous attempt until exact retry or explicit discard', () => {
+    openDialog();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Original task title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create and start' }));
+
+    const firstRequest = mocks.createMutate.mock.calls[0]?.[0] as {
+      body: { title: string };
+      idempotencyKey: string;
+    };
+    const firstOptions = mocks.createMutate.mock.calls[0]?.[1] as {
+      onError: (error: Error) => void;
+    };
+    act(() => firstOptions.onError(new Error('Connection lost after commit')));
+
+    expect(screen.getByText('The task creation outcome is unknown.')).toBeVisible();
+    expect(screen.getByLabelText('Title')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'New task' })).toBeVisible();
+    const overlay = screen.getByRole('dialog', { name: 'New task' }).previousElementSibling;
+    expect(overlay).toBeInstanceOf(HTMLElement);
+    fireEvent.pointerDown(overlay as HTMLElement, { button: 0, ctrlKey: false });
+    fireEvent.click(overlay as HTMLElement);
+    expect(screen.getByRole('dialog', { name: 'New task' })).toBeVisible();
+    expect(mocks.createReset).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Edited after timeout' } });
+    expect(screen.getByLabelText('Title')).toHaveValue('Original task title');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry same request' }));
+
+    const retryRequest = mocks.createMutate.mock.calls[1]?.[0] as typeof firstRequest;
+    expect(retryRequest.idempotencyKey).toBe(firstRequest.idempotencyKey);
+    expect(retryRequest.body).toEqual(firstRequest.body);
+    expect(retryRequest.body.title).toBe('Original task title');
+
+    // The submit ref locks synchronously, before mutation state can re-render.
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and edit' }));
+    expect(mocks.createReset).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Title')).toBeDisabled();
+
+    const retryOptions = mocks.createMutate.mock.calls[1]?.[1] as {
+      onError: (error: Error) => void;
+    };
+    act(() => retryOptions.onError(new ApiError('CONNECTION_FAILED', 'Still unknown', 0)));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and edit' }));
+
+    expect(mocks.createReset).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText('Title')).not.toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Edited after discard' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create and start' }));
+    const editedRequest = mocks.createMutate.mock.calls[2]?.[0] as typeof firstRequest;
+    expect(editedRequest.idempotencyKey).not.toBe(firstRequest.idempotencyKey);
+    expect(editedRequest.body.title).toBe('Edited after discard');
+  });
 });
 
 describe('new task helpers', () => {
+  it('treats 408, transport failures, and 5xx as ambiguous while other 4xx are definitive', () => {
+    expect(isDefinitiveCreateFailure(new ApiError('TIMEOUT', 'Unknown outcome', 408))).toBe(false);
+    expect(isDefinitiveCreateFailure(new ApiError('CONNECTION_FAILED', 'Offline', 0))).toBe(false);
+    expect(isDefinitiveCreateFailure(new ApiError('INTERNAL_ERROR', 'Failed', 500))).toBe(false);
+    expect(isDefinitiveCreateFailure(new ApiError('VALIDATION_FAILED', 'Invalid', 422))).toBe(true);
+  });
+
   it('keeps one acceptance criterion per non-empty line', () => {
     expect(toLines(' first \r\n\n second\n   ')).toEqual(['first', 'second']);
   });

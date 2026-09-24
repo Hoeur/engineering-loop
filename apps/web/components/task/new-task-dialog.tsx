@@ -107,6 +107,9 @@ export const buildCreateTaskInput = (projectId: string, form: NewTaskForm): Crea
 const errorMessage = (error: unknown, fallback: string): string =>
   error instanceof ApiError || error instanceof Error ? error.message : fallback;
 
+export const isDefinitiveCreateFailure = (error: unknown): boolean =>
+  error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408;
+
 interface EnumSelectProps<T extends string> {
   id: string;
   label: string;
@@ -156,14 +159,21 @@ export const NewTaskDialog = ({
   const [validation, setValidation] = React.useState<string | null>(null);
   const [createdTask, setCreatedTask] = React.useState<TaskSummary | null>(null);
   const [startError, setStartError] = React.useState<string | null>(null);
+  const [ambiguousCreateFailure, setAmbiguousCreateFailure] = React.useState(false);
   const submitLockedRef = React.useRef(false);
   const startLockedRef = React.useRef(false);
+  const createAttemptRef = React.useRef<{
+    idempotencyKey: string;
+    body: CreateTaskInput;
+  } | null>(null);
 
   const resetDialog = (): void => {
     submitLockedRef.current = false;
     startLockedRef.current = false;
+    createAttemptRef.current = null;
     setCreatedTask(null);
     setStartError(null);
+    setAmbiguousCreateFailure(false);
     setValidation(null);
     setForm(emptyNewTaskForm(repositories));
   };
@@ -175,16 +185,27 @@ export const NewTaskDialog = ({
   };
 
   const update = <K extends keyof NewTaskForm>(key: K, value: NewTaskForm[K]): void => {
+    if (ambiguousCreateFailure) return;
     setForm((current) => ({ ...current, [key]: value }));
   };
 
   const toggleCheck = (check: CheckType): void => {
+    if (ambiguousCreateFailure) return;
     setForm((current) => ({
       ...current,
       requiredChecks: current.requiredChecks.includes(check)
         ? current.requiredChecks.filter((entry) => entry !== check)
         : [...current.requiredChecks, check],
     }));
+  };
+
+  const discardCreateAttempt = (): void => {
+    if (submitLockedRef.current || createTask.isPending) return;
+    createAttemptRef.current = null;
+    submitLockedRef.current = false;
+    setAmbiguousCreateFailure(false);
+    setValidation(null);
+    createTask.reset();
   };
 
   const startWorkflow = (task: TaskSummary): void => {
@@ -225,18 +246,35 @@ export const NewTaskDialog = ({
   const submit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (submitLockedRef.current || createdTask) return;
-    const problem = validateNewTask(form);
-    setValidation(problem);
-    if (problem) return;
+    let attempt = createAttemptRef.current;
+    if (!attempt) {
+      const problem = validateNewTask(form);
+      setValidation(problem);
+      if (problem) return;
+      attempt = {
+        idempotencyKey: crypto.randomUUID(),
+        body: buildCreateTaskInput(projectId, form),
+      };
+      createAttemptRef.current = attempt;
+      setAmbiguousCreateFailure(false);
+    }
     submitLockedRef.current = true;
-    createTask.mutate(buildCreateTaskInput(projectId, form), {
+    createTask.mutate(attempt, {
       onSuccess: (task) => {
         submitLockedRef.current = false;
+        createAttemptRef.current = null;
+        setAmbiguousCreateFailure(false);
         setCreatedTask(task);
         startWorkflow(task);
       },
-      onError: () => {
+      onError: (error) => {
         submitLockedRef.current = false;
+        if (isDefinitiveCreateFailure(error)) {
+          createAttemptRef.current = null;
+          setAmbiguousCreateFailure(false);
+          return;
+        }
+        setAmbiguousCreateFailure(true);
       },
     });
   };
@@ -249,7 +287,9 @@ export const NewTaskDialog = ({
       setOpen(true);
       return;
     }
-    if (isPending || submitLockedRef.current || startLockedRef.current) return;
+    if (ambiguousCreateFailure || isPending || submitLockedRef.current || startLockedRef.current) {
+      return;
+    }
     setOpen(false);
     resetDialog();
   };
@@ -261,7 +301,7 @@ export const NewTaskDialog = ({
       </Button>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" hideClose={ambiguousCreateFailure}>
           <DialogHeader>
             <DialogTitle>New task</DialogTitle>
             <DialogDescription>
@@ -291,7 +331,10 @@ export const NewTaskDialog = ({
                 </div>
               </div>
             ) : (
-              <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+              <fieldset
+                disabled={ambiguousCreateFailure}
+                className="m-0 max-h-[60vh] space-y-4 overflow-y-auto border-0 p-0 pr-1 disabled:opacity-70"
+              >
                 {repositories.length > 1 ? (
                   <div className="space-y-1.5">
                     <Label htmlFor="new-task-repository">Repository</Label>
@@ -418,7 +461,7 @@ export const NewTaskDialog = ({
                     None selected: EngLoop runs its default checks.
                   </p>
                 </fieldset>
-              </div>
+              </fieldset>
             )}
 
             {!createdTask && validation ? (
@@ -426,7 +469,16 @@ export const NewTaskDialog = ({
                 {validation}
               </p>
             ) : null}
-            {!createdTask && createTask.isError ? (
+            {!createdTask && ambiguousCreateFailure ? (
+              <div role="alert" className="space-y-1 text-sm text-danger">
+                <p>The task creation outcome is unknown.</p>
+                <p className="text-xs text-muted-foreground">
+                  The original form is frozen. Retry the exact same request, or discard it before
+                  editing.
+                </p>
+              </div>
+            ) : null}
+            {!createdTask && createTask.isError && !ambiguousCreateFailure ? (
               <p role="alert" className="text-sm text-danger">
                 {errorMessage(createTask.error, 'Could not create the task')}
               </p>
@@ -456,22 +508,37 @@ export const NewTaskDialog = ({
                 </>
               ) : (
                 <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isPending}
-                    onClick={() => handleOpenChange(false)}
-                  >
-                    Cancel
-                  </Button>
+                  {!ambiguousCreateFailure ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending}
+                      onClick={() => handleOpenChange(false)}
+                    >
+                      Cancel
+                    </Button>
+                  ) : null}
+                  {ambiguousCreateFailure ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending}
+                      onClick={discardCreateAttempt}
+                    >
+                      Discard and edit
+                    </Button>
+                  ) : null}
                   <Button type="submit" size="sm" disabled={isPending}>
                     {isPending ? <Loader2 className="animate-spin" /> : null}
-                    {createTask.isPending
-                      ? 'Creating task…'
-                      : runTask.isPending
-                        ? 'Starting workflow…'
-                        : 'Create and start'}
+                    {ambiguousCreateFailure
+                      ? 'Retry same request'
+                      : createTask.isPending
+                        ? 'Creating task…'
+                        : runTask.isPending
+                          ? 'Starting workflow…'
+                          : 'Create and start'}
                   </Button>
                 </>
               )}

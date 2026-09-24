@@ -446,6 +446,7 @@ model Organization {
   webhookEvents  WebhookEvent[]
   githubInstallations GitHubInstallation[]
   githubAuthorizationAttempts GitHubAuthorizationAttempt[]
+  taskCreationRequests TaskCreationRequest[]
 
   @@index([slug])
   @@map("organizations")
@@ -726,6 +727,7 @@ model Task {
   approvals    Approval[]
   usageRecords UsageRecord[]
   costRecords  CostRecord[]
+  creationRequest TaskCreationRequest?
 
   @@unique([projectId, key])
   @@index([projectId, status])
@@ -734,6 +736,26 @@ model Task {
   @@index([assignedAgentId])
   @@index([lastActivityAt])
   @@map("tasks")
+}
+
+/// Durable organization-scoped deduplication record for POST /tasks.
+model TaskCreationRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  key            String    @db.Uuid
+  requestHash    String
+  taskId         String?   @unique
+  replayCount    Int       @default(0)
+  lastReplayedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([organizationId, createdAt])
+  @@map("task_creation_requests")
 }
 
 model TaskDependency {

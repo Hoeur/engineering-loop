@@ -585,12 +585,12 @@ Dependencies:
 
 Tasks:
 
-- [ ] Accept a client-generated idempotency key for task creation.
-- [ ] Persist the key and created task atomically.
-- [ ] Return the original task when the same key and payload are retried.
-- [ ] Reject reuse of a key with a different payload.
-- [ ] Keep the key stable across frontend retry/recovery attempts.
-- [ ] Add API and frontend tests for a committed task followed by a lost response and retry.
+- [x] Accept a client-generated idempotency key for task creation.
+- [x] Persist the key and created task atomically.
+- [x] Return the original task when the same key and payload are retried.
+- [x] Reject reuse of a key with a different payload.
+- [x] Keep the key stable across frontend retry/recovery attempts.
+- [x] Add API and frontend tests for a committed task followed by a lost response and retry.
 
 Acceptance criteria:
 

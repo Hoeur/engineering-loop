@@ -41,23 +41,32 @@ export interface AuditQuery {
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async record(input: RecordAuditInput): Promise<void> {
+  private createData(input: RecordAuditInput): Prisma.AuditLogUncheckedCreateInput {
     const ctx = getRequestContext();
-    await this.prisma.auditLog.create({
-      data: {
-        organizationId: input.organizationId,
-        projectId: input.projectId ?? null,
-        taskId: input.taskId ?? null,
-        action: input.action,
-        entityType: input.entityType,
-        entityId: input.entityId ?? null,
-        summary: input.summary,
-        metadata: scrubSecrets(input.metadata ?? {}) as Prisma.InputJsonValue,
-        actorType: input.actorType ?? ctx.actorType ?? 'SYSTEM',
-        actorId: input.actorId ?? ctx.actorId ?? null,
-        userId: input.userId ?? (ctx.actorType === 'USER' ? (ctx.actorId ?? null) : null),
-        traceId: ctx.traceId,
-      },
+    return {
+      organizationId: input.organizationId,
+      projectId: input.projectId ?? null,
+      taskId: input.taskId ?? null,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      summary: input.summary,
+      metadata: scrubSecrets(input.metadata ?? {}) as Prisma.InputJsonValue,
+      actorType: input.actorType ?? ctx.actorType ?? 'SYSTEM',
+      actorId: input.actorId ?? ctx.actorId ?? null,
+      userId: input.userId ?? (ctx.actorType === 'USER' ? (ctx.actorId ?? null) : null),
+      traceId: ctx.traceId,
+    };
+  }
+
+  async record(input: RecordAuditInput): Promise<void> {
+    await this.prisma.auditLog.create({ data: this.createData(input) });
+  }
+
+  /** Shares the caller's transaction and deliberately propagates audit failures. */
+  async recordInTransaction(tx: Prisma.TransactionClient, input: RecordAuditInput): Promise<void> {
+    await tx.auditLog.create({
+      data: this.createData(input),
     });
   }
 

@@ -143,6 +143,9 @@ export type CreateFeatureDto = z.infer<typeof createFeatureSchema>;
 // Tasks
 // ---------------------------------------------------------------------------
 
+/** Standard UUID request key accepted by POST /tasks for durable retries. */
+export const taskIdempotencyKeySchema = z.string().uuid();
+
 export const createTaskSchema = z.object({
   projectId: cuidLike,
   repositoryId: cuidLike.optional(),
