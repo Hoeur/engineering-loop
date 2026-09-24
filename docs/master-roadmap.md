@@ -83,10 +83,16 @@ polling with no user-visible error.
 
 ```
 OPS-001   Sandboxed agent execution
-PKG-001   Prompt-injection scanning
+PKG-001   Prompt-injection scanning        ✅ shipped 2026-09-21
 ```
 
-This is the largest open risk in the repository: a real coding agent runs as the
+PKG-001 landed early because it is self-contained: a scanner in
+`@engloop/agent-sdk` that `AgentExecutor` runs before resolving credentials or
+preparing the execution runtime,
+blocking on HIGH-confidence findings and auditing the rest. It narrows the
+attack surface but does not contain a compromised run; OPS-001 still does.
+
+OPS-001 is the largest open risk in the repository: a real coding agent runs as the
 worker's own OS user, contained only by a worktree, an allowlist, a timeout and
 a budget.
 

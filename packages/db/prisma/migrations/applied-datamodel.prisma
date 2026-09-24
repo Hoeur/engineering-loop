@@ -351,6 +351,7 @@ enum AuditAction {
   CONFIGURATION_CHANGED
   SCHEDULE_CHANGED
   SECRET_ACCESSED
+  INJECTION_DETECTED
 }
 
 enum ArchitectureDecisionStatus {

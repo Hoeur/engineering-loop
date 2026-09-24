@@ -5,6 +5,7 @@ import {
   GitBranch,
   ScanEye,
   Settings2,
+  ShieldAlert,
   ShieldCheck,
   SquareTerminal,
   Workflow,
@@ -24,6 +25,7 @@ const ICONS: Record<string, LucideIcon> = {
   CONFIGURATION_CHANGED: Settings2,
   SCHEDULE_CHANGED: Settings2,
   SECRET_ACCESSED: ShieldCheck,
+  INJECTION_DETECTED: ShieldAlert,
 };
 
 export const ActivityFeed = ({ entries }: { entries: AuditLogSummary[] }): React.JSX.Element => (
