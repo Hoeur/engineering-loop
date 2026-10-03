@@ -93,6 +93,30 @@ export const envSchema = z
     CLAUDE_CODE_CLI_PATH: z.string().default('claude'),
     CLAUDE_CODE_MODEL: z.string().default('claude-opus-5'),
 
+    // Where CLI agents run. `container` gives every run its own locked-down Docker
+    // container (see docs/security.md); `host` runs them as the worker user with
+    // no isolation and is refused in production.
+    AGENT_EXECUTION_RUNTIME: z.enum(['container', 'host']).default('container'),
+    AGENT_SANDBOX_DOCKER_PATH: z.string().default('docker'),
+    AGENT_SANDBOX_IMAGE: z.string().default('engloop/agent-sandbox:local'),
+    AGENT_SANDBOX_PROXY_IMAGE: z.string().optional(),
+    // uid:gid the agent runs as; it must be able to write the run's worktree.
+    // Defaults to the worker's own uid, or 65534 when the worker is root.
+    AGENT_SANDBOX_USER: z
+      .string()
+      .regex(/^\d+:\d+$/u, 'AGENT_SANDBOX_USER must be uid:gid')
+      .optional(),
+    AGENT_SANDBOX_CPUS: z.coerce.number().positive().default(1),
+    AGENT_SANDBOX_MEMORY_MB: int(2048),
+    AGENT_SANDBOX_PIDS_LIMIT: int(256),
+    AGENT_SANDBOX_TMPFS_MB: int(512),
+    // Labels this worker's containers. Must be unique per worker sharing a daemon.
+    AGENT_SANDBOX_OWNER: z.string().optional(),
+    AGENT_SANDBOX_EGRESS_NETWORK: z.string().default('bridge'),
+    // host:port or *.domain:port entries every run may reach in addition to its
+    // provider's API.
+    AGENT_SANDBOX_EGRESS_ALLOWLIST: csv([]),
+
     WORKSPACE_ROOT: z.string().default('./workspace'),
     GIT_AUTHOR_NAME: z.string().default('EngLoop Agent'),
     GIT_AUTHOR_EMAIL: z.string().default('agents@engloop.dev'),
@@ -136,6 +160,14 @@ export const envSchema = z
     UI_QA_BASE_URL: z.string().default('http://localhost:3000'),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production' && env.AGENT_EXECUTION_RUNTIME === 'host') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['AGENT_EXECUTION_RUNTIME'],
+        message:
+          'AGENT_EXECUTION_RUNTIME=host runs agents without isolation and is not allowed in production',
+      });
+    }
     const fields = [
       'GITHUB_APP_ID',
       'GITHUB_APP_SLUG',
@@ -146,13 +178,13 @@ export const envSchema = z
       'GITHUB_OAUTH_STATE_SECRET',
       'GITHUB_OAUTH_CALLBACK_URL',
     ] as const;
-  const githubConfigured = fields.some((field) => Boolean(env[field]));
-  if (!githubConfigured) return;
+    const githubConfigured = fields.some((field) => Boolean(env[field]));
+    if (!githubConfigured) return;
 
-  const githubComplete = fields.every((field) => Boolean(env[field]));
-  if (!githubComplete && env.NODE_ENV !== 'production') return;
+    const githubComplete = fields.every((field) => Boolean(env[field]));
+    if (!githubComplete && env.NODE_ENV !== 'production') return;
 
-  for (const field of fields) {
+    for (const field of fields) {
       const value = env[field];
       if (!value) {
         ctx.addIssue({

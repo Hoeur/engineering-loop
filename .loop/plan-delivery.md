@@ -2,7 +2,7 @@
 
 **Status:** active index · **Created:** 2026-09-19 · **Updated:** 2026-09-24
 **Source:** `docs/next-plan.md`
-**Supersedes:** `.loop/plan-real-ui-qa.md` as the *active* index. That plan is not
+**Supersedes:** `.loop/plan-real-ui-qa.md` as the _active_ index. That plan is not
 cancelled — it is rescheduled to **P3**, and its task specs stay valid.
 
 ---
@@ -14,7 +14,7 @@ QA was the next feature. The delivery plan reorders it to **P3**, behind
 sandboxing (P1) and live provider/GitHub delivery (P2). Running the loop off the
 old index would have picked task 02 (screenshot capture) — work the delivery plan
 explicitly defers, and which P1 changes the design of: once agents run inside a
-sandbox, *where Playwright runs* is answered by the sandbox, not by task 02's
+sandbox, _where Playwright runs_ is answered by the sandbox, not by task 02's
 open question Q1.
 
 That is the whole reason for re-indexing rather than continuing.
@@ -23,15 +23,15 @@ That is the whole reason for re-indexing rather than continuing.
 
 ## Sequence
 
-| Priority | Phase | Depends on | Status |
-| --- | --- | --- | --- |
-| P0 | Restore evidence baseline | — | **done** — all criteria met 2026-09-20 |
-| P1 | Sandboxed agent execution | P0 | **in progress** — runtime seam + non-isolated `HOST_PROCESS` only |
-| P2 | Real provider and GitHub delivery | P0, preferably P1 | not started |
-| P3 | Real UI QA and live run updates | P0, P2 | **partially done** — see below |
-| P4 | Durable and parallel orchestration | P1, P2 | not started |
-| P5 | Production auth, authz, notifications | P0 | not started |
-| P6 | Quality gates and prompt-injection defence | P1, P2 | not started |
+| Priority | Phase                                      | Depends on        | Status                                                                                      |
+| -------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------------------------- |
+| P0       | Restore evidence baseline                  | —                 | **done** — all criteria met 2026-09-20                                                      |
+| P1       | Sandboxed agent execution                  | P0                | **implemented** — `CONTAINER` runtime is the default; live-CLI-in-sandbox proof moves to P2 |
+| P2       | Real provider and GitHub delivery          | P0, preferably P1 | not started                                                                                 |
+| P3       | Real UI QA and live run updates            | P0, P2            | **partially done** — see below                                                              |
+| P4       | Durable and parallel orchestration         | P1, P2            | not started                                                                                 |
+| P5       | Production auth, authz, notifications      | P0                | not started                                                                                 |
+| P6       | Quality gates and prompt-injection defence | P1, P2            | not started                                                                                 |
 
 ---
 
@@ -39,16 +39,16 @@ That is the whole reason for re-indexing rather than continuing.
 
 Evidence record: `.loop/p0-evidence.md`.
 
-| Criterion | Status |
-| --- | --- |
-| Branch, upstream, remote, HEAD, status captured | Met |
-| Repair diff reviewable against a real base revision | Met — `9d58bc4` |
-| `pnpm lint` / `typecheck` / `test` | Met — clean · clean · 409 passing |
-| `pnpm build` | Met — `.loop/p0-evidence.md` §5 |
-| `pnpm test:e2e` runs on Windows | Met, with `PLAYWRIGHT_CHROMIUM_PATH` + `PLAYWRIGHT_BASE_URL` |
-| Six viewports pass without uncaught errors | Met — 99 passed / 0 flaky, twice in a row (`.loop/p0-evidence.md` §6) |
-| No horizontal scrolling | Met for the authenticated shell at all six widths, after fixing two real overflows |
-| Worktree clean, repair committed | Met |
+| Criterion                                           | Status                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Branch, upstream, remote, HEAD, status captured     | Met                                                                                |
+| Repair diff reviewable against a real base revision | Met — `9d58bc4`                                                                    |
+| `pnpm lint` / `typecheck` / `test`                  | Met — clean · clean · 409 passing                                                  |
+| `pnpm build`                                        | Met — `.loop/p0-evidence.md` §5                                                    |
+| `pnpm test:e2e` runs on Windows                     | Met, with `PLAYWRIGHT_CHROMIUM_PATH` + `PLAYWRIGHT_BASE_URL`                       |
+| Six viewports pass without uncaught errors          | Met — 99 passed / 0 flaky, twice in a row (`.loop/p0-evidence.md` §6)              |
+| No horizontal scrolling                             | Met for the authenticated shell at all six widths, after fixing two real overflows |
+| Worktree clean, repair committed                    | Met                                                                                |
 
 ### The auth gap — root-caused, not guessed
 
@@ -96,13 +96,11 @@ Still open, and now **P3 work**: `.loop/02-screenshot-capture/`,
 valid; read `.loop/plan-real-ui-qa.md` §"From 01 → 02" before starting any of
 them.
 
-**The current P1 slice does not resolve task 02's biggest open question.** Task
-02 asks whether Playwright runs in-process, as an allowlisted subprocess, or is
-deferred. P1 now has an execution-runtime port, but its only adapter is
-`HOST_PROCESS` with `isolated: false`; it runs children as the worker OS user.
-That seam does not determine safe Playwright placement. Task 02 remains open and
-must be re-planned when a future isolated runtime adapter provides a real
-containment boundary.
+**Task 02 can now be re-planned.** It asks whether Playwright runs in-process, as
+an allowlisted subprocess, or is deferred. P1 now ships an isolated `CONTAINER`
+runtime (see `docs/security.md` §Agent sandbox), so a browser can run inside a
+per-run container instead of as the worker OS user. Re-plan task 02 against that
+boundary before starting it.
 
 ---
 
@@ -116,15 +114,15 @@ These are user-facing features, distinct from the P0–P6 infrastructure phases.
 **None is startable today** — each depends on phases that have not begun. P0 is
 closed, so P1 and P5 (which depend only on P0) are the phases that unblock them.
 
-| Feature | Stated deps | Dep status | Schema gap |
-| --- | --- | --- | --- |
-| F1 Action Inbox | P3, P5 | neither started | `Task` human assignee, snooze |
-| F2 GitHub Issue Intake | P2, P5 | neither started | `ExternalIssue`, `ExternalIssueComment` |
-| F3 PR Feedback & Merge Queue | F2, P2, P5 | blocked twice | external findings, merge queue |
-| F4 Workflow Template Studio | P4, P5 | neither started | `WorkflowTemplateVersion` |
-| F5 Repository Intelligence | P2, **P8** | **P8 undefined** | `RepositorySnapshot` |
-| F6 Agent Evaluation Lab | P2, **P7, P8** | **P7/P8 undefined** | benchmark suites/cases/runs |
-| F7 Cross-Repository Change Sets | P4, **P10** | **P10 undefined** | `ChangeSet` |
+| Feature                         | Stated deps    | Dep status          | Schema gap                              |
+| ------------------------------- | -------------- | ------------------- | --------------------------------------- |
+| F1 Action Inbox                 | P3, P5         | neither started     | `Task` human assignee, snooze           |
+| F2 GitHub Issue Intake          | P2, P5         | neither started     | `ExternalIssue`, `ExternalIssueComment` |
+| F3 PR Feedback & Merge Queue    | F2, P2, P5     | blocked twice       | external findings, merge queue          |
+| F4 Workflow Template Studio     | P4, P5         | neither started     | `WorkflowTemplateVersion`               |
+| F5 Repository Intelligence      | P2, **P8**     | **P8 undefined**    | `RepositorySnapshot`                    |
+| F6 Agent Evaluation Lab         | P2, **P7, P8** | **P7/P8 undefined** | benchmark suites/cases/runs             |
+| F7 Cross-Repository Change Sets | P4, **P10**    | **P10 undefined**   | `ChangeSet`                             |
 
 ### P7, P8 and P10 are undefined
 
@@ -168,7 +166,7 @@ the same termination tests.
 ## Progress
 
 - [x] P0 — closed 2026-09-20: real E2E login, six viewports green, two overflow defects fixed
-- [ ] P1 — sandboxed agent execution
+- [~] P1 — container runtime, egress proxy, limits, recovery and real-Docker tests done; live CLI run in the sandbox pending (P2)
 - [ ] P2 — real provider and GitHub delivery
 - [~] P3 — UI QA step done (`94a1b76`); capture, wiring and surfacing open
 - [ ] P4 — durable and parallel orchestration

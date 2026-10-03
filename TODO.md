@@ -89,12 +89,18 @@ Tasks:
       command, timeout, credential-environment, cancellation and cleanup scoping. This adapter runs
       as the worker OS user and is **not a sandbox**; none of the containment tasks below are
       satisfied by it.
-- [ ] One container per agent run, mounting only that run's worktree
-- [ ] CPU, memory and disk caps
-- [ ] Egress allowlist for the agent process
-- [ ] Fail closed: if the sandbox cannot start, the run fails rather than
-      silently falling back to host execution
-- [ ] Integration test proving host paths outside the worktree are unreachable
+- [x] One container per agent run, mounting only that run's worktree (`ContainerExecutionRuntime`,
+      `docker/agent-sandbox.Dockerfile`)
+- [x] CPU, memory and disk caps — CPU, memory (no swap), PIDs and tmpfs; read-only image.
+      **Residual:** the bind-mounted worktree itself cannot be size-capped by Docker
+- [x] Egress allowlist for the agent process — `--network none`, or a per-run CONNECT proxy
+      allowing only listed `host:port`
+- [x] Fail closed: if the sandbox cannot start, the run fails rather than
+      silently falling back to host execution (`AGENT_SANDBOX_UNAVAILABLE`; `host` refused in
+      production)
+- [x] Integration test proving host paths outside the worktree are unreachable
+      (`apps/worker/test/container-runtime.docker.spec.ts`, CI job `sandbox`)
+- [ ] Exercise the pinned Codex / Claude Code CLIs inside the sandbox with a live key (P2)
 
 Acceptance criteria:
 
@@ -126,7 +132,7 @@ Tasks:
       `packages/agent-sdk/src/injection-scanner.ts`, `scanAgentContext` walks
       the role input recursively and every `guidance.files` entry
 - [x] Flag rather than silently strip; record the finding — `AuditAction.
-    INJECTION_DETECTED` row with pattern id, confidence, source and a bounded
+  INJECTION_DETECTED` row with pattern id, confidence, source and a bounded
       excerpt (secret-scrubbed by `AuditWriter`)
 - [x] Surface as a blocking finding when confidence is high — `AgentExecutor`
       throws `InjectionBlockedError` before credentials are resolved or the

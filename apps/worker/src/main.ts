@@ -15,6 +15,14 @@ async function bootstrap(): Promise<void> {
   const { env, logger } = worker;
 
   await worker.worktrees.ensureLayout();
+  try {
+    // A crashed worker leaves its sandbox containers running; reap them before
+    // taking jobs. Failure is logged, not fatal: runs still fail closed at prepare.
+    const reaped = await worker.executionRuntime.recover();
+    if (reaped > 0) logger.warn({ reaped }, 'agent.runtime.recovered');
+  } catch (error) {
+    logger.error({ error: String(error) }, 'agent.runtime.recover_failed');
+  }
 
   const connection = createRedisConnection(env);
   const workflowQueue = new Queue(QUEUE_NAMES.WORKFLOW, {
@@ -101,6 +109,7 @@ async function bootstrap(): Promise<void> {
       concurrency: env.WORKER_CONCURRENCY,
       healthPort: env.WORKER_HEALTH_PORT,
       defaultProvider: env.AGENT_DEFAULT_PROVIDER,
+      executionRuntime: worker.executionRuntime.kind,
       providers: Object.fromEntries(
         Object.entries(providerHealth).map(([key, value]) => [key, value.healthy]),
       ),

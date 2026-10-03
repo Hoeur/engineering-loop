@@ -65,6 +65,11 @@ export type AgentCommandInput =
 export interface AgentCommandExecutor {
   isAllowed(command: string): boolean;
   run(input: AgentCommandInput): Promise<CommandResult>;
+  /**
+   * Host directory for a run's schema/output files when the executor cannot see the
+   * worker's temp dir (e.g. a container that mounts only the worktree and this dir).
+   */
+  invocationDirectory?(runId: string): string | undefined;
 }
 
 export interface CliDecodeInput {
@@ -193,7 +198,8 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
       request: string;
     }) => Promise<T>,
   ): Promise<T> {
-    const dir = await mkdtemp(join(tmpdir(), 'engloop-agent-'));
+    const base = this.options.executor.invocationDirectory?.(context.runId) ?? tmpdir();
+    const dir = await mkdtemp(join(base, 'engloop-agent-'));
     const schemaFile = join(dir, 'response-schema.json');
     const outputFile = join(dir, 'output.json');
 

@@ -62,6 +62,17 @@ describe('environment contract', () => {
     ).toThrow(EnvValidationError);
   });
 
+  it('defaults to the container runtime and refuses host execution in production', () => {
+    expect(parseEnv(base).AGENT_EXECUTION_RUNTIME).toBe('container');
+    expect(parseEnv({ ...base, AGENT_EXECUTION_RUNTIME: 'host' }).AGENT_EXECUTION_RUNTIME).toBe(
+      'host',
+    );
+    expect(() =>
+      parseEnv({ ...base, NODE_ENV: 'production', AGENT_EXECUTION_RUNTIME: 'host' }),
+    ).toThrow(/AGENT_EXECUTION_RUNTIME/u);
+    expect(() => parseEnv({ ...base, AGENT_SANDBOX_USER: 'root' })).toThrow(EnvValidationError);
+  });
+
   it('rejects a complete GitHub configuration containing placeholders', () => {
     expect(() =>
       parseEnv({

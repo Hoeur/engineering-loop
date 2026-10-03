@@ -51,8 +51,20 @@ Both CLI adapters extend `CliCodingAgentProvider`. They use the exported narrow
 
 ## Execution runtime seam
 
-The worker owns `AgentExecutionRuntime`. The current adapter is
-`HostProcessExecutionRuntime`, reported honestly as:
+The worker owns `AgentExecutionRuntime`. `AGENT_EXECUTION_RUNTIME` selects the
+adapter. The default, `container`, is `ContainerExecutionRuntime`
+(`kind: CONTAINER`, `isolated: true`): one locked-down Docker container per run
+that mounts only the worktree and a per-run scratch dir. The provider writes its
+schema/output files to that scratch dir (`AgentCommandExecutor.invocationDirectory`),
+host paths in argv are rewritten to container paths, and the CLI resolves on the
+image's `PATH`. The only network route is a per-run proxy allowing the provider
+API (`api.openai.com:443` for Codex, `api.anthropic.com:443` for Claude Code)
+plus `AGENT_SANDBOX_EGRESS_ALLOWLIST`. Health probes run in a throwaway offline
+container. See [security.md](./security.md#agent-sandbox-ops-001) for every
+control and residual gap.
+
+The development-only `host` value selects `HostProcessExecutionRuntime`, reported
+honestly as:
 
 ```text
 kind: HOST_PROCESS
@@ -113,13 +125,15 @@ back to the login.
 At run time `AgentExecutor` resolves the key through `CredentialResolver`
 (`apps/worker/src/services/credential-resolver.ts`), which decrypts it with
 `SECRETS_ENCRYPTION_KEY` and caches it briefly. Immediately before invoking a CLI
-provider, `AgentExecutor` prepares `HostProcessExecutionRuntime` for that run and
+provider, `AgentExecutor` prepares the execution runtime for that run and
 passes the resolved credential in the run-scoped `secretEnv`. It always releases
 the runtime session in a `finally`, which clears the session and its credential
 environment. The non-secret audit descriptor records the credential source and
 applied limits, never secret values. A credential that cannot be decrypted fails
 the run with `AGENT_PROVIDER_UNAVAILABLE` rather than silently downgrading to the
-CLI login. The current adapter remains `HOST_PROCESS` with `isolated: false`.
+CLI login. The container runtime never mounts a CLI login (`CODEX_HOME` or
+`~/.claude`), so in container mode a provider without a stored key fails with
+`AGENT_SANDBOX_UNAVAILABLE`; CLI logins work only with the development `host` runtime.
 
 Plaintext is never returned by the API: a write echoes a redacted preview
 (`sk-••••••••mnop`) once, and reads report only `hasCredential` and

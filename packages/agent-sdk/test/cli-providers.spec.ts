@@ -197,6 +197,31 @@ describe('CodexAgentProvider', () => {
     await expect(access(outputFile)).rejects.toThrow();
   });
 
+  it('places invocation files in the executor-provided run directory when one exists', async () => {
+    const workspacePath = await makeTemporaryDirectory();
+    const invocationRoot = await makeTemporaryDirectory();
+    let schemaFile = '';
+    const runner: AgentCommandExecutor = {
+      isAllowed: vi.fn(() => true),
+      invocationDirectory: vi.fn(() => invocationRoot),
+      run: vi.fn(async (input: AgentCommandInput) => {
+        schemaFile = input.args[input.args.indexOf('--output-schema') + 1] ?? '';
+        const outputFile = input.args[input.args.indexOf('--output-last-message') + 1] ?? '';
+        await writeFile(outputFile, JSON.stringify(validPlan), 'utf8');
+        return commandResult(input, '');
+      }),
+    };
+    const provider = new CodexAgentProvider({ cliPath: 'codex', model: 'gpt-test', executor: runner });
+
+    const context = makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath });
+    const result = await provider.startRun(context);
+
+    expect(result.status).toBe('SUCCEEDED');
+    expect(runner.invocationDirectory).toHaveBeenCalledWith(context.runId);
+    expect(dirname(dirname(schemaFile))).toBe(invocationRoot);
+    expect(await readdir(invocationRoot)).toEqual([]);
+  });
+
   it('rejects malformed JSONL transport output', async () => {
     const workspacePath = await makeTemporaryDirectory();
     const runner = fakeRunner(async (input) => commandResult(input, 'not-json'));

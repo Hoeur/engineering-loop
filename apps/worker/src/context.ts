@@ -1,3 +1,5 @@
+import { hostname } from 'node:os';
+import { join, resolve } from 'node:path';
 import { getEnv, SecretCipher, type Env } from '@engloop/config';
 import { createLogger, type EngLoopLogger } from '@engloop/logger';
 import { getPrismaClient, type PrismaClient } from '@engloop/db';
@@ -18,7 +20,11 @@ import { GitManager } from './services/git-manager';
 import { PlanMaterializer } from './services/plan-materializer';
 import { UsageRecorder } from './services/usage-recorder';
 import { CredentialResolver } from './services/credential-resolver';
-import { HostProcessExecutionRuntime, type AgentExecutionRuntime } from './execution';
+import {
+  ContainerExecutionRuntime,
+  HostProcessExecutionRuntime,
+  type AgentExecutionRuntime,
+} from './execution';
 
 export interface WorkerContext {
   env: Env;
@@ -83,10 +89,7 @@ export const createWorkerContext = (): WorkerContext => {
       : undefined;
 
   const registry = new AgentProviderRegistry(logger);
-  const executionRuntime = new HostProcessExecutionRuntime({
-    runner,
-    healthEnv: env.CODEX_HOME ? { CODEX_HOME: env.CODEX_HOME } : undefined,
-  });
+  const executionRuntime = createExecutionRuntime(env, runner, logger);
   const credentials = new CredentialResolver({
     prisma,
     cipher: new SecretCipher(env.SECRETS_ENCRYPTION_KEY),
@@ -107,6 +110,8 @@ export const createWorkerContext = (): WorkerContext => {
       new CodexAgentProvider({
         cliPath: env.CODEX_CLI_PATH,
         model: env.CODEX_MODEL,
+        // A sandboxed worktree's .git points at a host path that is not mounted.
+        skipGitRepoCheck: executionRuntime.kind === 'CONTAINER',
         executor: executionRuntime,
         logger,
       }),
@@ -158,4 +163,69 @@ export const createWorkerContext = (): WorkerContext => {
     plans,
     credentials,
   };
+};
+
+const defaultSandboxUser = (): string => {
+  const uid = process.getuid?.();
+  const gid = process.getgid?.();
+  // A root worker gets the conventional unprivileged nobody user instead.
+  return uid === undefined || uid === 0 || gid === undefined
+    ? '65534:65534'
+    : `${String(uid)}:${String(gid)}`;
+};
+
+export const createExecutionRuntime = (
+  env: Env,
+  runner: CommandRunner,
+  logger: EngLoopLogger,
+): AgentExecutionRuntime => {
+  if (env.AGENT_EXECUTION_RUNTIME === 'host') {
+    logger.warn({}, 'agent.runtime.host_process_unisolated');
+    return new HostProcessExecutionRuntime({
+      runner,
+      healthEnv: env.CODEX_HOME ? { CODEX_HOME: env.CODEX_HOME } : undefined,
+    });
+  }
+  // Docker is the only executable the container runtime spawns on the host.
+  const docker = new CommandRunner({
+    allowlist: [env.AGENT_SANDBOX_DOCKER_PATH],
+    defaultTimeoutMs: env.COMMAND_TIMEOUT_MS,
+    maxBufferBytes: env.COMMAND_MAX_BUFFER_BYTES,
+    envAllowlist: [
+      'PATH',
+      'HOME',
+      'DOCKER_HOST',
+      'DOCKER_CONFIG',
+      'DOCKER_CONTEXT',
+      'DOCKER_CERT_PATH',
+      'DOCKER_TLS_VERIFY',
+      'SYSTEMROOT',
+      'PATHEXT',
+      'USERPROFILE',
+      'APPDATA',
+      'LOCALAPPDATA',
+      'TEMP',
+      'TMP',
+    ],
+    logger,
+  });
+  return new ContainerExecutionRuntime({
+    runner: docker,
+    logger,
+    config: {
+      dockerPath: env.AGENT_SANDBOX_DOCKER_PATH,
+      image: env.AGENT_SANDBOX_IMAGE,
+      proxyImage: env.AGENT_SANDBOX_PROXY_IMAGE ?? env.AGENT_SANDBOX_IMAGE,
+      user: env.AGENT_SANDBOX_USER ?? defaultSandboxUser(),
+      owner: env.AGENT_SANDBOX_OWNER ?? hostname(),
+      scratchRoot: join(resolve(env.WORKSPACE_ROOT), 'sandbox'),
+      cpus: env.AGENT_SANDBOX_CPUS,
+      memoryMb: env.AGENT_SANDBOX_MEMORY_MB,
+      pidsLimit: env.AGENT_SANDBOX_PIDS_LIMIT,
+      tmpfsMb: env.AGENT_SANDBOX_TMPFS_MB,
+      egressAllowlist: env.AGENT_SANDBOX_EGRESS_ALLOWLIST,
+      egressNetwork: env.AGENT_SANDBOX_EGRESS_NETWORK,
+      commandAllowlist: env.COMMAND_ALLOWLIST,
+    },
+  });
 };

@@ -16,6 +16,8 @@ export interface CodexProviderOptions
   > {
   key?: string;
   name?: string;
+  /** Needed where the worktree's `.git` link target is not visible, e.g. a sandbox. */
+  skipGitRepoCheck?: boolean;
 }
 
 const codexEventSchema = z.object({ type: z.string() }).passthrough();
@@ -105,6 +107,7 @@ export class CodexAgentProvider extends CliCodingAgentProvider {
       buildArgs: (context, schemaFile, outputFile) => [
         'exec',
         '--ignore-user-config',
+        ...(options.skipGitRepoCheck ? ['--skip-git-repo-check'] : []),
         '--sandbox',
         'workspace-write',
         '--model',
@@ -121,6 +124,7 @@ export class CodexAgentProvider extends CliCodingAgentProvider {
       buildResumeArgs: (sessionId, _context, schemaFile, outputFile) => [
         'exec',
         '--ignore-user-config',
+        ...(options.skipGitRepoCheck ? ['--skip-git-repo-check'] : []),
         '--sandbox',
         'workspace-write',
         '--model',

@@ -56,4 +56,37 @@ jobs:
       - name: Build applications
         run: pnpm -r --filter=./apps/** run build
 
+  sandbox:
+    name: agent sandbox (real Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build shared packages
+        run: pnpm build:packages
+
+      - name: Build sandbox image
+        run: docker build -f docker/agent-sandbox.Dockerfile -t engloop/agent-sandbox:local .
+
+      # ENGLOOP_SANDBOX_IT=1 turns a missing image into a failure instead of a skip.
+      - name: Sandbox isolation tests
+        env:
+          ENGLOOP_SANDBOX_IT: '1'
+        run: pnpm --filter @engloop/worker exec vitest run test/container-runtime.docker.spec.ts
+
   # Deployment is intentionally not part of CI for the MVP.

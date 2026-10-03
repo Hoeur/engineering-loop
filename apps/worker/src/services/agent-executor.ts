@@ -15,7 +15,13 @@ import type { UsageRecorder } from './usage-recorder';
 import type { ContextBuilder } from './context-builder';
 import type { CredentialResolver } from './credential-resolver';
 import { claudeCodeCliAuth, codexCliAuth, type CliAuth } from '../provider-auth';
-import type { AgentExecutionRuntime, ExecutionRuntimeDescriptor } from '../execution';
+import {
+  LIMIT_EXIT_REASONS,
+  SandboxUnavailableError,
+  type AgentExecutionRuntime,
+  type ExecutionRuntimeDescriptor,
+  type ExecutionRuntimeReport,
+} from '../execution';
 
 export interface ExecuteAgentInput {
   taskId: string;
@@ -223,6 +229,7 @@ export class AgentExecutor {
     let actualModel = resolution.model;
     let runtimePrepared = false;
     let runtimeDescriptor: ExecutionRuntimeDescriptor | null = null;
+    let runtimeReport: ExecutionRuntimeReport | null = null;
 
     const cancellationRequested = async (): Promise<boolean> => {
       const current = await prisma.agentRun.findUnique({
@@ -331,6 +338,7 @@ export class AgentExecutor {
           limits: {
             timeoutMs: context.budget.timeoutMs,
             allowedCommands: this.providerCommands(provider.kind),
+            egressAllowlist: this.providerEgress(provider.kind),
           },
           secretEnv: auth.env,
           credentialSource: auth.source,
@@ -399,7 +407,10 @@ export class AgentExecutor {
         failure = { code: 'AGENT_OUTPUT_INVALID', message: error.message };
       } else if (error instanceof ProviderUnavailableError) {
         failure = { code: 'AGENT_PROVIDER_UNAVAILABLE', message: error.message };
-      } else if (error instanceof InjectionBlockedError) {
+      } else if (
+        error instanceof InjectionBlockedError ||
+        error instanceof SandboxUnavailableError
+      ) {
         failure = { code: error.code, message: error.message };
       } else {
         failure = {
@@ -411,11 +422,21 @@ export class AgentExecutor {
     } finally {
       if (runtimePrepared) {
         try {
-          await executionRuntime.release(agentRun.id);
+          runtimeReport = await executionRuntime.release(agentRun.id);
         } catch (error) {
           runLogger.warn({ error: String(error) }, 'agent.runtime.release_failed');
         }
       }
+    }
+
+    // A run the sandbox stopped for exceeding a limit is a failure whatever the
+    // provider made of its truncated output.
+    if (runtimeReport && LIMIT_EXIT_REASONS.has(runtimeReport.exitReason)) {
+      failure = {
+        code: 'AGENT_RUNTIME_LIMIT',
+        message: `Agent sandbox stopped the run: ${runtimeReport.exitReason}`,
+      };
+      runLogger.error({ ...failure }, 'agent.run.failed');
     }
 
     const status: AgentRunStatus = failure
@@ -528,6 +549,7 @@ export class AgentExecutor {
         totalTokens: persisted.totalTokens,
         costUsd: Number(persisted.estimatedCost),
         terminalReason: failure?.code ?? result?.error?.code ?? status,
+        ...(runtimeReport ? { runtime: runtimeReport } : {}),
       },
       traceId: input.traceId,
     });
@@ -556,7 +578,13 @@ export class AgentExecutor {
     const apiKey = await credentials.resolve(organizationId, providerKey);
 
     if (providerKey === 'claude-code') return claudeCodeCliAuth(apiKey);
-    if (providerKey === 'codex') return codexCliAuth(apiKey, env.CODEX_HOME);
+    // CODEX_HOME is a host path holding the CLI login; it is never handed to a sandbox.
+    if (providerKey === 'codex') {
+      return codexCliAuth(
+        apiKey,
+        this.deps.executionRuntime.kind === 'HOST_PROCESS' ? env.CODEX_HOME : undefined,
+      );
+    }
     // Providers without CLI credentials (e.g. mock) spawn with no extra env.
     return { source: apiKey ? 'api-key' : 'cli-login', env: {} };
   }
@@ -566,6 +594,13 @@ export class AgentExecutor {
     if (kind === 'CODEX') return [env.CODEX_CLI_PATH];
     if (kind === 'CLAUDE_CODE') return [env.CLAUDE_CODE_CLI_PATH];
     throw new ProviderUnavailableError(kind, 'no host-process command is configured');
+  }
+
+  /** The only destinations a sandboxed provider CLI may reach. */
+  private providerEgress(kind: string): readonly string[] {
+    if (kind === 'CODEX') return ['api.openai.com:443'];
+    if (kind === 'CLAUDE_CODE') return ['api.anthropic.com:443'];
+    return [];
   }
 
   private async assertWorkflowOwnership(

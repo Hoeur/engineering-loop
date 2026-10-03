@@ -5,7 +5,9 @@ import type { CommandRunner } from '@engloop/git';
 import type { CommandResult } from '@engloop/types';
 import type {
   AgentExecutionRuntime,
+  ExecutionExitReason,
   ExecutionRuntimeDescriptor,
+  ExecutionRuntimeReport,
   PrepareExecutionInput,
 } from './execution-runtime';
 
@@ -14,6 +16,7 @@ interface HostProcessSession {
   allowedCommands: ReadonlySet<string>;
   secretEnv: Readonly<Record<string, string>>;
   controller: AbortController;
+  exitReason: ExecutionExitReason;
 }
 
 export interface HostProcessExecutionRuntimeOptions {
@@ -40,6 +43,7 @@ const containsPath = (parent: string, child: string): boolean => {
  * cwd, commands and cancellation, but provides no OS, network or resource isolation.
  */
 export class HostProcessExecutionRuntime implements AgentExecutionRuntime {
+  readonly kind = 'HOST_PROCESS' as const;
   private readonly sessions = new Map<string, HostProcessSession>();
   private state: 'running' | 'shutting-down' | 'closed' = 'running';
   private shutdownPromise: Promise<void> | null = null;
@@ -75,6 +79,7 @@ export class HostProcessExecutionRuntime implements AgentExecutionRuntime {
       allowedCommands,
       secretEnv: { ...input.secretEnv },
       controller: new AbortController(),
+      exitReason: 'COMPLETED',
     });
     return descriptor;
   }
@@ -115,6 +120,11 @@ export class HostProcessExecutionRuntime implements AgentExecutionRuntime {
         env: { ...session.secretEnv },
         signal: controller.signal,
       });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'CommandTimeoutError') {
+        session.exitReason = 'TIMEOUT';
+      }
+      throw error;
     } finally {
       session.controller.signal.removeEventListener('abort', abort);
       input.signal?.removeEventListener('abort', abort);
@@ -122,14 +132,28 @@ export class HostProcessExecutionRuntime implements AgentExecutionRuntime {
   }
 
   async cancel(runId: string): Promise<void> {
-    this.sessions.get(runId)?.controller.abort();
-  }
-
-  async release(runId: string): Promise<void> {
     const session = this.sessions.get(runId);
     if (!session) return;
+    if (session.exitReason === 'COMPLETED') session.exitReason = 'CANCELLED';
+    session.controller.abort();
+  }
+
+  async release(runId: string): Promise<ExecutionRuntimeReport | null> {
+    const session = this.sessions.get(runId);
+    if (!session) return null;
     session.controller.abort();
     this.sessions.delete(runId);
+    return {
+      runtimeId: session.descriptor.runtimeId,
+      kind: this.kind,
+      exitReason: session.exitReason,
+      deniedEgress: [],
+    };
+  }
+
+  /** Host children die with the worker's process group; there is nothing durable to reap. */
+  async recover(): Promise<number> {
+    return 0;
   }
 
   shutdown(): Promise<void> {
