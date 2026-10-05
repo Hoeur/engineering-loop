@@ -65,6 +65,8 @@ export type AgentCommandInput =
 export interface AgentCommandExecutor {
   isAllowed(command: string): boolean;
   run(input: AgentCommandInput): Promise<CommandResult>;
+  /** Allocates provider transport files outside the untrusted worktree. */
+  createInvocationDirectory?(runId: string): Promise<string>;
 }
 
 export interface CliDecodeInput {
@@ -193,7 +195,10 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
       request: string;
     }) => Promise<T>,
   ): Promise<T> {
-    const dir = await mkdtemp(join(tmpdir(), 'engloop-agent-'));
+    const runtimeDirectory = this.options.executor.createInvocationDirectory;
+    const dir = runtimeDirectory
+      ? await runtimeDirectory.call(this.options.executor, context.runId)
+      : await mkdtemp(join(tmpdir(), 'engloop-agent-'));
     const schemaFile = join(dir, 'response-schema.json');
     const outputFile = join(dir, 'output.json');
 
@@ -227,7 +232,9 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
       await writeFile(outputFile, '', 'utf8');
       return await invoke({ schemaFile, outputFile, schemaJson, request });
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      // Runtime-owned transport paths can be modified by untrusted execution;
+      // only the runtime can safely quiesce and remove its complete control mount.
+      if (!runtimeDirectory) await rm(dir, { recursive: true, force: true });
     }
   }
 

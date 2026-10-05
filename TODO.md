@@ -94,7 +94,16 @@ Tasks:
 - [ ] Egress allowlist for the agent process
 - [ ] Fail closed: if the sandbox cannot start, the run fails rather than
       silently falling back to host execution
-- [ ] Integration test proving host paths outside the worktree are unreachable
+- [x] Integration test proving host paths outside the worktree are unreachable
+
+P1-A Docker adapter is implemented as an uncommitted draft. Dedicated Docker
+control is separate from the repository command runner; API-key output is scrubbed,
+cleanup failures fail the agent run, and failed removals retain state for retry.
+The explicit `test:docker` gate now proves host/sibling/repository path and
+Windows-junction isolation, private Git operation, fail-closed startup, timeout,
+cancellation and cleanup using a real Linux Docker daemon. Resource, egress and
+recovery acceptance gates remain open.
+See `.loop/p1-evidence.md` for verification and the remaining execution gates.
 
 Acceptance criteria:
 

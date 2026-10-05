@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { AgentRole, type CommandResult } from '@engloop/types';
@@ -195,6 +195,49 @@ describe('CodexAgentProvider', () => {
     expect(schemaFile.startsWith(workspacePath)).toBe(false);
     await expect(access(schemaFile)).rejects.toThrow();
     await expect(access(outputFile)).rejects.toThrow();
+  });
+
+  it('uses the execution runtime control directory for provider transport files', async () => {
+    const workspacePath = await makeTemporaryDirectory();
+    const controlPath = await makeTemporaryDirectory();
+    const invocationPath = join(controlPath, 'invocation');
+    let schemaFile = '';
+    const runner = fakeRunner(async (input) => {
+      const schemaIndex = input.args.indexOf('--output-schema');
+      schemaFile = input.args[schemaIndex + 1] ?? '';
+      const outputIndex = input.args.indexOf('--output-last-message');
+      await writeFile(input.args[outputIndex + 1] ?? '', JSON.stringify(validPlan), 'utf8');
+      return commandResult(
+        input,
+        [
+          JSON.stringify({ type: 'thread.started', thread_id: 'controlled-files' }),
+          JSON.stringify({ type: 'turn.completed', usage: {} }),
+        ].join('\n'),
+      );
+    });
+    runner.createInvocationDirectory = vi.fn(async () => {
+      await mkdir(invocationPath, { recursive: true });
+      return invocationPath;
+    });
+    const provider = new CodexAgentProvider({
+      cliPath: 'codex',
+      model: 'gpt-test',
+      executor: runner,
+    });
+
+    await provider.startRun(makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath }));
+
+    expect(runner.createInvocationDirectory).toHaveBeenCalledOnce();
+    expect(schemaFile.startsWith(controlPath)).toBe(true);
+    await expect(access(invocationPath)).resolves.toBeUndefined();
+    const resumed = await provider.resumeRun('controlled-files', {
+      ...makeAgentTaskContext({ role: AgentRole.PLANNER, workspacePath }),
+      previousRunId: 'previous-run',
+      reason: 'Continue with the retained runtime transport directory',
+    });
+    expect(resumed.status).toBe('SUCCEEDED');
+    expect(runner.createInvocationDirectory).toHaveBeenCalledTimes(2);
+    await expect(access(invocationPath)).resolves.toBeUndefined();
   });
 
   it('rejects malformed JSONL transport output', async () => {

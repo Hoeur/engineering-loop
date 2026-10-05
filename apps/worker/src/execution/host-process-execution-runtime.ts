@@ -19,6 +19,7 @@ interface HostProcessSession {
 export interface HostProcessExecutionRuntimeOptions {
   runner: CommandRunner;
   healthEnv?: Readonly<Record<string, string>>;
+  disabled?: boolean;
 }
 
 const commandNames = (command: string): string[] => {
@@ -47,10 +48,11 @@ export class HostProcessExecutionRuntime implements AgentExecutionRuntime {
   constructor(private readonly options: HostProcessExecutionRuntimeOptions) {}
 
   isAllowed(command: string): boolean {
-    return this.options.runner.isAllowed(command);
+    return !this.options.disabled && this.options.runner.isAllowed(command);
   }
 
   async prepare(input: PrepareExecutionInput): Promise<ExecutionRuntimeDescriptor> {
+    if (this.options.disabled) throw new Error('Production CLI execution requires DOCKER');
     if (this.state !== 'running') {
       throw new Error(`Execution runtime is ${this.state}`);
     }
@@ -80,6 +82,7 @@ export class HostProcessExecutionRuntime implements AgentExecutionRuntime {
   }
 
   async run(input: AgentCommandInput): Promise<CommandResult> {
+    if (this.options.disabled) throw new Error('Production CLI execution requires DOCKER');
     if (this.state !== 'running') {
       throw new Error(`Execution runtime is ${this.state}`);
     }

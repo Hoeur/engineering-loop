@@ -10,6 +10,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:docker": "vitest run --config vitest.docker.config.ts",
     "test:watch": "vitest",
     "clean": "node ../../scripts/clean.mjs ."
   },

@@ -26,7 +26,7 @@ That is the whole reason for re-indexing rather than continuing.
 | Priority | Phase | Depends on | Status |
 | --- | --- | --- | --- |
 | P0 | Restore evidence baseline | — | **done** — all criteria met 2026-09-20 |
-| P1 | Sandboxed agent execution | P0 | **in progress** — runtime seam + non-isolated `HOST_PROCESS` only |
+| P1 | Sandboxed agent execution | P0 | **in progress** — live P1-A containment/lifecycle tests pass; provider egress, disk quota and orphan recovery open |
 | P2 | Real provider and GitHub delivery | P0, preferably P1 | not started |
 | P3 | Real UI QA and live run updates | P0, P2 | **partially done** — see below |
 | P4 | Durable and parallel orchestration | P1, P2 | not started |
@@ -98,9 +98,9 @@ them.
 
 **The current P1 slice does not resolve task 02's biggest open question.** Task
 02 asks whether Playwright runs in-process, as an allowlisted subprocess, or is
-deferred. P1 now has an execution-runtime port, but its only adapter is
-`HOST_PROCESS` with `isolated: false`; it runs children as the worker OS user.
-That seam does not determine safe Playwright placement. Task 02 remains open and
+deferred. P1 now has a Docker adapter draft alongside `HOST_PROCESS` with live
+filesystem/lifecycle evidence, but the Docker adapter denies all network access.
+That draft does not determine safe Playwright placement. Task 02 remains open and
 must be re-planned when a future isolated runtime adapter provides a real
 containment boundary.
 
@@ -166,6 +166,8 @@ the same termination tests.
 ---
 
 ## Progress
+
+P1-A continuation evidence and remaining gates: `.loop/p1-evidence.md`.
 
 - [x] P0 — closed 2026-09-20: real E2E login, six viewports green, two overflow defects fixed
 - [ ] P1 — sandboxed agent execution

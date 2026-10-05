@@ -83,6 +83,15 @@ export const envSchema = z
     AGENT_RUN_TIMEOUT_MS: int(900_000),
     AGENT_TOKEN_BUDGET: int(200_000),
     AGENT_COST_BUDGET_USD: z.coerce.number().default(5),
+    AGENT_EXECUTION_RUNTIME: z.enum(['HOST_PROCESS', 'DOCKER']).default('HOST_PROCESS'),
+    AGENT_RUNTIME_CONTROL_ROOT: z.string().min(1).optional(),
+    AGENT_CONTAINER_DOCKER_PATH: z.string().min(1).default('docker'),
+    AGENT_CONTAINER_IMAGE: z.string().min(1).default('engloop-agent-runtime:latest'),
+    AGENT_CONTAINER_CODEX_CLI_PATH: z.string().min(1).default('codex'),
+    AGENT_CONTAINER_CLAUDE_CODE_CLI_PATH: z.string().min(1).default('claude'),
+    AGENT_CONTAINER_CPU_COUNT: z.coerce.number().positive().default(1),
+    AGENT_CONTAINER_MEMORY_MB: z.coerce.number().int().positive().default(2_048),
+    AGENT_CONTAINER_PIDS: z.coerce.number().int().positive().default(256),
 
     // Non-secret CLI wiring only. Provider API keys are configured in the UI and
     // stored encrypted per organization; a provider without one runs on the CLI's
@@ -146,13 +155,13 @@ export const envSchema = z
       'GITHUB_OAUTH_STATE_SECRET',
       'GITHUB_OAUTH_CALLBACK_URL',
     ] as const;
-  const githubConfigured = fields.some((field) => Boolean(env[field]));
-  if (!githubConfigured) return;
+    const githubConfigured = fields.some((field) => Boolean(env[field]));
+    if (!githubConfigured) return;
 
-  const githubComplete = fields.every((field) => Boolean(env[field]));
-  if (!githubComplete && env.NODE_ENV !== 'production') return;
+    const githubComplete = fields.every((field) => Boolean(env[field]));
+    if (!githubComplete && env.NODE_ENV !== 'production') return;
 
-  for (const field of fields) {
+    for (const field of fields) {
       const value = env[field];
       if (!value) {
         ctx.addIssue({
@@ -212,6 +221,17 @@ export const envSchema = z
           code: z.ZodIssueCode.custom,
           path: ['GITHUB_OAUTH_CALLBACK_URL'],
           message: 'GITHUB_OAUTH_CALLBACK_URL must be an absolute HTTP(S) URL',
+        });
+      }
+    }
+  })
+  .superRefine((env, ctx) => {
+    if (env.AGENT_EXECUTION_RUNTIME === 'DOCKER') {
+      if (!env.COMMAND_ALLOWLIST.includes('git')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['COMMAND_ALLOWLIST'],
+          message: 'must include git when DOCKER execution is selected',
         });
       }
     }

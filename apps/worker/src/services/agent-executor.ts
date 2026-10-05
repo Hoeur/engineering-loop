@@ -15,7 +15,11 @@ import type { UsageRecorder } from './usage-recorder';
 import type { ContextBuilder } from './context-builder';
 import type { CredentialResolver } from './credential-resolver';
 import { claudeCodeCliAuth, codexCliAuth, type CliAuth } from '../provider-auth';
-import type { AgentExecutionRuntime, ExecutionRuntimeDescriptor } from '../execution';
+import {
+  configuredProviderCommand,
+  type AgentExecutionRuntime,
+  type ExecutionRuntimeDescriptor,
+} from '../execution';
 
 export interface ExecuteAgentInput {
   taskId: string;
@@ -414,6 +418,11 @@ export class AgentExecutor {
           await executionRuntime.release(agentRun.id);
         } catch (error) {
           runLogger.warn({ error: String(error) }, 'agent.runtime.release_failed');
+          failure = {
+            code: 'AGENT_RUNTIME_CLEANUP_FAILED',
+            message: 'Agent runtime cleanup failed',
+          };
+          result = null;
         }
       }
     }
@@ -563,9 +572,11 @@ export class AgentExecutor {
 
   private providerCommands(kind: string): readonly string[] {
     const { env } = this.deps;
-    if (kind === 'CODEX') return [env.CODEX_CLI_PATH];
-    if (kind === 'CLAUDE_CODE') return [env.CLAUDE_CODE_CLI_PATH];
-    throw new ProviderUnavailableError(kind, 'no host-process command is configured');
+    try {
+      return [configuredProviderCommand(env, kind)];
+    } catch {
+      throw new ProviderUnavailableError(kind, 'no execution command is configured');
+    }
   }
 
   private async assertWorkflowOwnership(

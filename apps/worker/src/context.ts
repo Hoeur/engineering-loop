@@ -18,7 +18,11 @@ import { GitManager } from './services/git-manager';
 import { PlanMaterializer } from './services/plan-materializer';
 import { UsageRecorder } from './services/usage-recorder';
 import { CredentialResolver } from './services/credential-resolver';
-import { HostProcessExecutionRuntime, type AgentExecutionRuntime } from './execution';
+import {
+  configuredProviderCommand,
+  createAgentExecutionRuntime,
+  type AgentExecutionRuntime,
+} from './execution';
 
 export interface WorkerContext {
   env: Env;
@@ -83,10 +87,7 @@ export const createWorkerContext = (): WorkerContext => {
       : undefined;
 
   const registry = new AgentProviderRegistry(logger);
-  const executionRuntime = new HostProcessExecutionRuntime({
-    runner,
-    healthEnv: env.CODEX_HOME ? { CODEX_HOME: env.CODEX_HOME } : undefined,
-  });
+  const executionRuntime = createAgentExecutionRuntime(env, runner);
   const credentials = new CredentialResolver({
     prisma,
     cipher: new SecretCipher(env.SECRETS_ENCRYPTION_KEY),
@@ -105,7 +106,7 @@ export const createWorkerContext = (): WorkerContext => {
   registry
     .register(
       new CodexAgentProvider({
-        cliPath: env.CODEX_CLI_PATH,
+        cliPath: configuredProviderCommand(env, 'CODEX'),
         model: env.CODEX_MODEL,
         executor: executionRuntime,
         logger,
@@ -113,7 +114,7 @@ export const createWorkerContext = (): WorkerContext => {
     )
     .register(
       new ClaudeCodeAgentProvider({
-        cliPath: env.CLAUDE_CODE_CLI_PATH,
+        cliPath: configuredProviderCommand(env, 'CLAUDE_CODE'),
         model: env.CLAUDE_CODE_MODEL,
         executor: executionRuntime,
         logger,

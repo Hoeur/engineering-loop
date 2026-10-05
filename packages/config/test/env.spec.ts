@@ -15,6 +15,8 @@ describe('environment contract', () => {
     expect(env.AGENT_DEFAULT_PROVIDER).toBe('codex');
     expect(env.AGENT_ENABLE_MOCK).toBe(false);
     expect(env.AGENT_MAX_REVIEW_CYCLES).toBe(3);
+    expect(env.AGENT_EXECUTION_RUNTIME).toBe('HOST_PROCESS');
+    expect(env.AGENT_CONTAINER_MEMORY_MB).toBe(2_048);
   });
 
   it('fails fast, listing every problem at once', () => {
@@ -49,6 +51,35 @@ describe('environment contract', () => {
     expect(parseEnv({ ...base, API_PORT: '5001' }).API_PORT).toBe(5001);
   });
 
+  it('leaves worker execution enforcement out of shared API configuration', () => {
+    expect(parseEnv({ ...base, NODE_ENV: 'production' }).NODE_ENV).toBe('production');
+  });
+
+  it('accepts bounded Docker execution and validates its required host commands', () => {
+    expect(
+      parseEnv({ ...base, NODE_ENV: 'production', AGENT_EXECUTION_RUNTIME: 'DOCKER' }),
+    ).toMatchObject({
+      AGENT_EXECUTION_RUNTIME: 'DOCKER',
+      AGENT_CONTAINER_CPU_COUNT: 1,
+      AGENT_CONTAINER_PIDS: 256,
+    });
+    expect(
+      parseEnv({
+        ...base,
+        AGENT_EXECUTION_RUNTIME: 'DOCKER',
+        COMMAND_ALLOWLIST: 'git,codex',
+      }),
+    ).toMatchObject({ COMMAND_ALLOWLIST: ['git', 'codex'] });
+    expect(parseEnv(base).COMMAND_ALLOWLIST).not.toContain('docker');
+    expect(() =>
+      parseEnv({
+        ...base,
+        AGENT_EXECUTION_RUNTIME: 'DOCKER',
+        COMMAND_ALLOWLIST: 'docker,codex',
+      }),
+    ).toThrow(/include git/u);
+  });
+
   it('allows GitHub integration to remain fully disabled', () => {
     expect(
       parseEnv({ ...base, GITHUB_APP_ID: '', GITHUB_APP_PRIVATE_KEY: '' }).GITHUB_APP_ID,
@@ -57,9 +88,9 @@ describe('environment contract', () => {
 
   it('allows incomplete GitHub configuration locally but rejects it in production', () => {
     expect(parseEnv({ ...base, GITHUB_APP_ID: '123' }).GITHUB_APP_ID).toBe('123');
-    expect(() =>
-      parseEnv({ ...base, NODE_ENV: 'production', GITHUB_APP_ID: '123' }),
-    ).toThrow(EnvValidationError);
+    expect(() => parseEnv({ ...base, NODE_ENV: 'production', GITHUB_APP_ID: '123' })).toThrow(
+      EnvValidationError,
+    );
   });
 
   it('rejects a complete GitHub configuration containing placeholders', () => {

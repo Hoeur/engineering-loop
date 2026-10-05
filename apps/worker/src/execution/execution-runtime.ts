@@ -6,18 +6,39 @@ export interface ExecutionRuntimeLimits {
   allowedCommands: readonly string[];
 }
 
-export interface ExecutionRuntimeDescriptor {
+interface ExecutionRuntimeDescriptorBase {
   runtimeId: string;
-  kind: 'HOST_PROCESS';
-  isolated: false;
   workspacePath: string;
   startedAt: string;
+  credentialSource: CliAuthSource;
+}
+
+export interface HostProcessRuntimeDescriptor extends ExecutionRuntimeDescriptorBase {
+  kind: 'HOST_PROCESS';
+  isolated: false;
   appliedLimits: {
     timeoutMs: number;
     allowedCommands: readonly string[];
   };
-  credentialSource: CliAuthSource;
 }
+
+export interface DockerContainerRuntimeDescriptor extends ExecutionRuntimeDescriptorBase {
+  kind: 'DOCKER_CONTAINER';
+  isolated: true;
+  containerName: string;
+  appliedLimits: {
+    timeoutMs: number;
+    allowedCommands: readonly string[];
+    cpuCount: number;
+    memoryBytes: number;
+    pids: number;
+    network: 'none';
+  };
+}
+
+export type ExecutionRuntimeDescriptor =
+  | HostProcessRuntimeDescriptor
+  | DockerContainerRuntimeDescriptor;
 
 export interface PrepareExecutionInput {
   runId: string;
