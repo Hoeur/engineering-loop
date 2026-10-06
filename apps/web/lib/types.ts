@@ -162,6 +162,7 @@ export interface UpsertProviderInput {
 
 export interface TaskSummary {
   id: string;
+  phaseId?: string | null;
   key: string;
   title: string;
   description: string;

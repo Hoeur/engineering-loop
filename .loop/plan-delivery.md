@@ -23,6 +23,11 @@ That is the whole reason for re-indexing rather than continuing.
 
 ## Sequence
 
+Detailed product track for customizable phases, task prompts and parallel agents:
+[phase-based delivery plan](plan-phase-agent-delivery.md). This CP-01–CP-07 track
+expands P4 and related F4 configuration work; it does not close P1/P2 or change
+their live-runtime dependencies.
+
 | Priority | Phase | Depends on | Status |
 | --- | --- | --- | --- |
 | P0 | Restore evidence baseline | — | **done** — all criteria met 2026-09-20 |

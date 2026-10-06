@@ -22,6 +22,25 @@ The visual summarizes the runtime path, the evidence-backed review loop, the
 capabilities available today, and the next delivery priorities. The diagrams
 and tables below provide the detailed, text-native reference.
 
+### Customizable phase and agent flow
+
+![Proposed EngLoop flow: customizable phases, tasks, prompts, agents and teams; versioned run snapshots; parallel collaboration; evidence-based acceptance](docs/images/engloop-customizable-phase-agent-flow-2026-10-05.png)
+
+This is the **target design**, not a claim that the entire flow is implemented.
+Each task covers one bounded deliverable. Agents collaborate on ready work;
+only unmet dependencies make an individual task wait.
+
+CP-01A and CP-01B currently provide draft phase CRUD/order, task membership,
+editable project requirements and phase objectives, deliverables, acceptance
+criteria, required roles and validated phase dependencies. These controls do
+not activate phases or schedule agents. Versioned task/prompt/agent snapshots,
+parallel scheduling, safe execution-time edits and evidence-based phase gates
+remain planned.
+
+See the [phase-based delivery plan](.loop/plan-phase-agent-delivery.md),
+[CP-01A evidence](.loop/cp-01a-evidence.md) and
+[CP-01B evidence](.loop/cp-01b-evidence.md) for scope and verification details.
+
 ---
 
 ## The loop

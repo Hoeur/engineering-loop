@@ -480,6 +480,10 @@ model Project {
   /// Prefix for generated task keys, e.g. ENG -> ENG-101.
   key             String
   description     String?
+  contractObjective String?
+  contractRequirements String[] @default([])
+  contractNonGoals String[] @default([])
+  contractAcceptanceCriteria String[] @default([])
   status          ProjectStatus   @default(ACTIVE)
   permissionLevel PermissionLevel @default(LEVEL_3_PR)
   maxReviewCycles Int             @default(3)
@@ -498,6 +502,7 @@ model Project {
   epics        Epic[]
   features     Feature[]
   tasks        Task[]
+  phases       ProjectPhase[]
   agents       Agent[]
   schedules    Schedule[]
   memories     ProjectMemory[]
@@ -512,6 +517,44 @@ model Project {
   @@unique([organizationId, key])
   @@index([organizationId, status])
   @@map("projects")
+}
+
+/// Draft project organization only; no activation or acceptance lifecycle yet.
+model ProjectPhase {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  objective String?
+  deliverables String[] @default([])
+  acceptanceCriteria String[] @default([])
+  requiredRoles AgentRole[] @default([])
+  position    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+  dependencies ProjectPhaseDependency[] @relation("PhaseDependencies")
+  dependents ProjectPhaseDependency[] @relation("PhaseDependents")
+
+  @@unique([id, projectId])
+  @@unique([projectId, position])
+  @@map("project_phases")
+}
+
+model ProjectPhaseDependency {
+  projectId String
+  phaseId String
+  dependsOnPhaseId String
+
+  phase ProjectPhase @relation("PhaseDependencies", fields: [phaseId, projectId], references: [id, projectId], onDelete: Cascade, onUpdate: NoAction)
+  dependsOn ProjectPhase @relation("PhaseDependents", fields: [dependsOnPhaseId, projectId], references: [id, projectId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([phaseId, dependsOnPhaseId])
+  @@index([projectId, phaseId])
+  @@index([projectId, dependsOnPhaseId])
+  @@map("project_phase_dependencies")
 }
 
 model Repository {
@@ -668,6 +711,7 @@ model Feature {
 model Task {
   id                  String     @id @default(cuid())
   projectId           String
+  phaseId             String?
   repositoryId        String?
   epicId              String?
   featureId           String?
@@ -706,6 +750,7 @@ model Task {
   lastActivityAt      DateTime   @default(now())
 
   project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase        ProjectPhase? @relation(fields: [phaseId, projectId], references: [id, projectId], onDelete: NoAction, onUpdate: NoAction)
   repository   Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
   epic         Epic?       @relation(fields: [epicId], references: [id], onDelete: SetNull)
   feature      Feature?    @relation(fields: [featureId], references: [id], onDelete: SetNull)
@@ -732,6 +777,7 @@ model Task {
 
   @@unique([projectId, key])
   @@index([projectId, status])
+  @@index([projectId, phaseId, status])
   @@index([repositoryId, status])
   @@index([status, priority])
   @@index([assignedAgentId])

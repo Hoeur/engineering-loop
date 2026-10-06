@@ -22,7 +22,7 @@ const packageRoot = path.join(here, '..');
 const schemaPath = path.join(packageRoot, 'prisma', 'schema.prisma');
 const migrationsDir = path.join(packageRoot, 'prisma', 'migrations');
 const snapshotPath = path.join(migrationsDir, 'applied-datamodel.prisma');
-const prismaBin = path.join(packageRoot, '..', '..', 'node_modules', '.bin', 'prisma');
+const prismaBin = path.join(packageRoot, '..', '..', 'node_modules', 'prisma', 'build', 'index.js');
 
 const rawName = process.argv[2];
 if (!rawName) {
@@ -51,7 +51,11 @@ const args = hasSnapshot
     ]
   : ['migrate', 'diff', '--from-empty', '--to-schema-datamodel', schemaPath, '--script'];
 
-const sql = execFileSync(prismaBin, args, { cwd: packageRoot, encoding: 'utf8' });
+const sql = execFileSync(process.execPath, [prismaBin, ...args], {
+  cwd: packageRoot,
+  encoding: 'utf8',
+  windowsHide: true,
+});
 
 // `migrate diff` emits a comment-only script when the two datamodels match.
 const meaningful = sql
