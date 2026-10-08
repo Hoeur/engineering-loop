@@ -63,6 +63,37 @@ describe('MockAgentProvider', () => {
     }
   });
 
+  it('plans only the supplied active phase and retains its version binding', async () => {
+    const phaseContext = {
+      phaseId: 'cphase12345678901234567890',
+      phaseUpdatedAt: '2026-10-08T00:00:00.000Z',
+      projectRequirements: ['Whole project context'],
+      projectObjective: null,
+      projectNonGoals: [],
+      projectAcceptanceCriteria: [],
+      name: 'Search',
+      objective: 'Provide bounded search',
+      deliverables: ['Search service'],
+      acceptanceCriteria: ['Search returns matching records'],
+      requiredRoles: ['BACKEND_DEVELOPER'],
+    };
+    const result = await provider.startRun(
+      makeAgentTaskContext({
+        role: AgentRole.PLANNER,
+        input: { requirement: 'Deliver search', phaseContext },
+      }),
+    );
+    const plan = plannerOutputSchema.parse(result.output);
+    expect(plan.phaseScope).toEqual({
+      phaseId: phaseContext.phaseId,
+      phaseUpdatedAt: phaseContext.phaseUpdatedAt,
+    });
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.tasks[0]?.ownerRole).toBe('BACKEND_DEVELOPER');
+    expect(plan.tasks[0]?.objective).toBe(phaseContext.objective);
+    expect(plan.tasks[0]?.acceptanceCriteria).toEqual(phaseContext.acceptanceCriteria);
+  });
+
   it('requests changes on the first review cycle, then approves', async () => {
     const first = await provider.startRun(
       makeAgentTaskContext({

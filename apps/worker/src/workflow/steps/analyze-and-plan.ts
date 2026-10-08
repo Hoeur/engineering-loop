@@ -1,5 +1,14 @@
 import { AgentRole, AgentRunStatus, RunStatus } from '@engloop/types';
-import { plannerOutputSchema, repositoryAnalysisOutputSchema, parseSafely } from '@engloop/schemas';
+import {
+  plannerInputSchema,
+  plannerOutputSchema,
+  repositoryAnalysisOutputSchema,
+  parseSafely,
+} from '@engloop/schemas';
+import {
+  assertPlannerPhaseScope,
+  loadPlannerPhaseContext,
+} from '../../services/planner-phase-scope';
 import type { StepHandler } from './types';
 
 /**
@@ -80,17 +89,21 @@ export const planStep: StepHandler = async (context) => {
     return { status: RunStatus.FAILED, error: 'No workspace available for planning' };
   }
 
+  const currentParent = await worker.prisma.task.findUniqueOrThrow({ where: { id: task.id } });
+  const phaseContext = await loadPlannerPhaseContext(worker.prisma, currentParent);
+  const input = plannerInputSchema.parse({
+    requirement: state.requirement || currentParent.description || currentParent.title,
+    objective: currentParent.objective,
+    taskType: currentParent.type,
+    priority: currentParent.priority,
+    constraints: state.constraints,
+    targetPaths: state.targetPaths,
+    ...(phaseContext ? { phaseContext } : {}),
+  });
   const outcome = await worker.agents.execute({
     taskId: task.id,
     role: AgentRole.PLANNER,
-    input: {
-      requirement: state.requirement || task.description || task.title,
-      objective: task.objective,
-      taskType: task.type,
-      priority: task.priority,
-      constraints: state.constraints,
-      targetPaths: state.targetPaths,
-    },
+    input,
     workspacePath,
     branchName: state.branchName,
     traceId,
@@ -104,6 +117,7 @@ export const planStep: StepHandler = async (context) => {
 
   const parsed = parseSafely(plannerOutputSchema, outcome.output, 'planner output');
   if (!parsed.ok) return { status: RunStatus.FAILED, error: parsed.error.message };
+  assertPlannerPhaseScope(parsed.data, phaseContext);
 
   return {
     status: RunStatus.SUCCEEDED,

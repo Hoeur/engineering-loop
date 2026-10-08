@@ -225,7 +225,11 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
         input: context.input,
         responseSchema,
         instructions:
-          'Respond with a single JSON object matching responseSchema. Do not wrap it in prose.',
+          'Respond with a single JSON object matching responseSchema. Do not wrap it in prose. ' +
+          'For PLANNER input containing phaseContext: plan only that phase, echo phaseId and phaseUpdatedAt exactly in phaseScope; ' +
+          'produce at most 20 tasks, each with an ownerRole, nonblank bounded objective and acceptanceCriteria, nonempty requiredChecks, ' +
+          'and safe repository-relative suggestedFiles. Suggested files and ownerRole do not grant execution permissions. ' +
+          'For unphased PLANNER input, omit phaseScope.',
       });
 
       await writeFile(schemaFile, JSON.stringify(responseSchema, null, 2), 'utf8');

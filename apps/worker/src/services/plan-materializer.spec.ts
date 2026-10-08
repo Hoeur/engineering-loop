@@ -19,13 +19,17 @@ const fixture = () => {
   const tx = {
     $queryRaw: vi.fn(async () => [{ id: 'project' }]),
     project: {
+      findUniqueOrThrow: vi.fn(async () => ({ organizationId: 'organization' })),
       update: vi.fn(async () => ({ key: 'ENG', taskSequence: ++sequence })),
     },
     task: {
+      findUniqueOrThrow: vi.fn(async () => ({ id: 'parent', projectId: 'project', phaseId: null })),
       update: vi.fn(async () => ({})),
       create: vi.fn(async () => ({ id: `child-${sequence}` })),
     },
     taskDependency: { createMany: vi.fn(async () => ({ count: 3 })) },
+    auditLog: { createMany: vi.fn(async () => ({ count: 4 })) },
+    projectPhase: { findUnique: vi.fn() },
   };
   const prisma = {
     task: {
@@ -76,9 +80,36 @@ describe('PlanMaterializer dependency validation', () => {
     });
     expect(state.prisma.$transaction).toHaveBeenCalledOnce();
     expect(state.tx.task.create).toHaveBeenCalledTimes(3);
-    expect(state.tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(state.tx.$queryRaw).toHaveBeenCalledTimes(2);
     expect(state.tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
       state.tx.task.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('rejects a scoped plan for an unphased parent before any writes', async () => {
+    const state = fixture();
+    const plan = validPlan();
+    plan.phaseScope = {
+      phaseId: 'cphase12345678901234567890',
+      phaseUpdatedAt: '2026-10-08T00:00:00.000Z',
+    };
+    plan.tasks.forEach((task) =>
+      Object.assign(task, {
+        ownerRole: 'IMPLEMENTER',
+        acceptanceCriteria: ['Verified'],
+        requiredChecks: ['UNIT'],
+      }),
+    );
+    await expect(state.materializer.materialize('parent', plan)).rejects.toThrow('unphased');
+    expect(state.tx.task.update).not.toHaveBeenCalled();
+    expect(state.tx.task.create).not.toHaveBeenCalled();
+  });
+
+  it('propagates audit failure so the transaction cannot commit unaudited tasks', async () => {
+    const state = fixture();
+    state.tx.auditLog.createMany.mockRejectedValueOnce(new Error('Audit unavailable'));
+    await expect(state.materializer.materialize('parent', validPlan())).rejects.toThrow(
+      'Audit unavailable',
     );
   });
 });

@@ -4,7 +4,9 @@ Created: 2026-10-06
 Status: CP-01A and CP-01B published. CP-01C graph hardening and phase lifecycle
 protections implemented and reviewed. Current checkout gate evidence is in
 [graph evidence](cp-01c-evidence.md) and
-[lifecycle evidence](cp-01c-lifecycle-evidence.md). CP-01D remains next.
+[lifecycle evidence](cp-01c-lifecycle-evidence.md). CP-01D bounded active-phase
+planning is implemented and reviewed; see [planner evidence](cp-01d-evidence.md).
+CP-02A team membership and role coverage is next.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -68,8 +70,12 @@ Dependencies: none. First implementation slice: CP-01A, phase CRUD with task mem
   active/accepted contract and membership guards, and responsive controls are in
   [lifecycle evidence](cp-01c-lifecycle-evidence.md). ACCEPTED is reserved for the
   CP-06 evidence gate; activation does not start scheduling or task execution.
-- [ ] CP-01D: Planner outputs bounded active-phase tasks with objective, owner role,
+- [x] CP-01D: Planner outputs bounded active-phase tasks with objective, owner role,
   dependencies, suggested files, checks and criteria. Validate before materializing.
+  Phased parent tasks require ACTIVE status and a matching phase/version binding;
+  generated children retain their phase and owner role. Unphased planning remains
+  compatible. This creates BACKLOG tasks; scheduling and immutable input snapshots
+  remain CP-03 and CP-02. See [planner evidence](cp-01d-evidence.md).
 
 Acceptance: create/edit a project with three phases; link/edit tasks; invalid DAGs
 and cross-tenant references fail; phase 2 cannot activate before its prerequisites
