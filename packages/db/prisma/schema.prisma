@@ -720,6 +720,8 @@ model Task {
   id                  String     @id @default(cuid())
   projectId           String
   phaseId             String?
+  /// Planning ownership metadata, never an execution permission grant.
+  ownerRole           AgentRole?
   repositoryId        String?
   epicId              String?
   featureId           String?

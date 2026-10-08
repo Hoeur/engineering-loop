@@ -80,6 +80,61 @@ const fakeRunner = (
   }) as AgentCommandExecutor;
 
 describe('CodexAgentProvider', () => {
+  it('communicates phase bounds and retains scope through CLI output parsing', async () => {
+    const workspacePath = await makeTemporaryDirectory();
+    const scope = {
+      phaseId: 'cphase12345678901234567890',
+      phaseUpdatedAt: '2026-10-08T00:00:00.000Z',
+    };
+    const scopedPlan = {
+      ...validPlan,
+      phaseScope: scope,
+      tasks: [
+        {
+          ...validPlan.tasks[0],
+          ownerRole: 'IMPLEMENTER',
+          acceptanceCriteria: ['Verified'],
+          requiredChecks: ['UNIT'],
+        },
+      ],
+    };
+    let request = '';
+    const runner = fakeRunner(async (input) => {
+      request = input.stdin ?? '';
+      const outputIndex = input.args.indexOf('--output-last-message');
+      await writeFile(input.args[outputIndex + 1]!, JSON.stringify(scopedPlan), 'utf8');
+      return commandResult(input, '');
+    });
+    const provider = new CodexAgentProvider({ cliPath: 'codex', model: 'test', executor: runner });
+    const result = await provider.startRun(
+      makeAgentTaskContext({
+        role: AgentRole.PLANNER,
+        workspacePath,
+        input: {
+          requirement: 'Scoped work',
+          phaseContext: {
+            ...scope,
+            projectRequirements: [],
+            projectObjective: null,
+            projectNonGoals: [],
+            projectAcceptanceCriteria: [],
+            name: 'Phase',
+            objective: null,
+            deliverables: [],
+            acceptanceCriteria: [],
+            requiredRoles: [],
+          },
+        },
+      }),
+    );
+    expect(result.output).toMatchObject({
+      phaseScope: scope,
+      tasks: [{ ownerRole: 'IMPLEMENTER' }],
+    });
+    expect(JSON.parse(request).input.phaseContext).toMatchObject(scope);
+    expect(JSON.parse(request).instructions).toContain('at most 20 tasks');
+    expect(JSON.parse(request).responseSchema.properties.phaseScope).toBeDefined();
+  });
   it('uses a separate health command scope without a run id', async () => {
     const runner = fakeRunner(async (input) => commandResult(input, 'codex 1.0'));
     const provider = new CodexAgentProvider({

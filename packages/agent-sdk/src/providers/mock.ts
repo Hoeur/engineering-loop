@@ -172,6 +172,39 @@ export class MockAgentProvider implements CodingAgentProvider {
     const requirement = parsed.ok ? parsed.data.requirement : 'Unspecified requirement';
     const short = requirement.slice(0, 80);
 
+    if (parsed.ok && parsed.data.phaseContext) {
+      const phase = parsed.data.phaseContext;
+      return {
+        phaseScope: { phaseId: phase.phaseId, phaseUpdatedAt: phase.phaseUpdatedAt },
+        summary: `Plan the active phase: ${phase.name}`,
+        approach: 'Deliver the phase contract as bounded reviewable work.',
+        risks: ['Mock planning output requires verification before execution.'],
+        tasks: [
+          {
+            title: `Deliver ${phase.name}`.slice(0, 200),
+            objective: phase.objective?.trim() || `Deliver the ${phase.name} phase contract`,
+            ownerRole: phase.requiredRoles[0] ?? AgentRole.IMPLEMENTER,
+            description: phase.deliverables.join('\n'),
+            type: 'FEATURE',
+            priority: parsed.data.priority,
+            riskLevel: 'MEDIUM',
+            acceptanceCriteria: phase.acceptanceCriteria.filter((value) => value.trim()).length
+              ? phase.acceptanceCriteria.filter((value) => value.trim())
+              : ['Verify the phase deliverables'],
+            implementationNotes: [],
+            suggestedFiles: [],
+            requiredChecks: ['LINT', 'TYPECHECK', 'UNIT'],
+            dependsOn: [],
+          },
+        ],
+        acceptanceCriteria: phase.acceptanceCriteria,
+        requiredChecks: ['LINT', 'TYPECHECK', 'UNIT'],
+        dependencies: [],
+        architectureNotes: [],
+        openQuestions: [],
+      };
+    }
+
     return {
       summary: `Deliver "${short}" in three reviewable increments.`,
       approach:

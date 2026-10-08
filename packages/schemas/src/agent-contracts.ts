@@ -115,6 +115,27 @@ export type AgentContinuationContext = z.infer<typeof agentContinuationContextSc
 // Planner
 // ---------------------------------------------------------------------------
 
+export const plannerPhaseScopeSchema = z
+  .object({
+    phaseId: cuidLike,
+    phaseUpdatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const plannerPhaseContextSchema = plannerPhaseScopeSchema
+  .extend({
+    projectRequirements: z.array(z.string()),
+    projectObjective: z.string().nullable().default(null),
+    projectNonGoals: z.array(z.string()).default([]),
+    projectAcceptanceCriteria: z.array(z.string()).default([]),
+    name: z.string().trim().min(1).max(200),
+    objective: z.string().nullable(),
+    deliverables: z.array(z.string()),
+    acceptanceCriteria: z.array(z.string()),
+    requiredRoles: z.array(zAgentRole),
+  })
+  .strict();
+
 export const plannerInputSchema = z.object({
   requirement: z.string().min(1),
   objective: z.string().optional(),
@@ -122,10 +143,12 @@ export const plannerInputSchema = z.object({
   priority: zPriority.default('MEDIUM'),
   constraints: z.array(z.string()).default([]),
   targetPaths: z.array(z.string()).default([]),
+  phaseContext: plannerPhaseContextSchema.optional(),
 });
 export type PlannerInput = z.infer<typeof plannerInputSchema>;
 
 export const plannedTaskSchema = z.object({
+  ownerRole: zAgentRole.optional(),
   title: z.string().min(1).max(200),
   objective: z.string().min(1),
   description: z.string().default(''),
@@ -153,8 +176,50 @@ export const plannerOutputSchema = z
     dependencies: z.array(z.string()).default([]),
     architectureNotes: z.array(z.string()).default([]),
     openQuestions: z.array(z.string()).default([]),
+    phaseScope: plannerPhaseScopeSchema.optional(),
   })
   .superRefine((plan, ctx) => {
+    if (plan.phaseScope) {
+      const issue = (path: (string | number)[], message: string) =>
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+      if (plan.tasks.length > 20) issue(['tasks'], 'A phase plan may contain at most 20 tasks');
+      plan.tasks.forEach((task, index) => {
+        const base = ['tasks', index];
+        if (!task.ownerRole) issue([...base, 'ownerRole'], 'Phase tasks require an owner role');
+        if (!task.title.trim()) issue([...base, 'title'], 'Title must not be blank');
+        if (!task.objective.trim() || task.objective.length > 4000)
+          issue([...base, 'objective'], 'Objective must be nonblank and at most 4000 characters');
+        if (
+          !task.acceptanceCriteria.length ||
+          task.acceptanceCriteria.some((value) => !value.trim() || value.length > 2000)
+        )
+          issue(
+            [...base, 'acceptanceCriteria'],
+            'Phase tasks require nonblank bounded acceptance criteria',
+          );
+        if (!task.requiredChecks.length)
+          issue([...base, 'requiredChecks'], 'Phase tasks require checks');
+        task.suggestedFiles.forEach((path, pathIndex) => {
+          if (
+            !path.trim() ||
+            path.length > 500 ||
+            /[\\:]/.test(path) ||
+            [...path].some((character) => character.charCodeAt(0) < 32) ||
+            path.startsWith('/') ||
+            path
+              .split('/')
+              .some(
+                (part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git',
+              ) ||
+            path.toLowerCase().startsWith('workspace/repositories/')
+          )
+            issue(
+              [...base, 'suggestedFiles', pathIndex],
+              'Suggested files must be safe repository-relative paths',
+            );
+        });
+      });
+    }
     let invalidReference = false;
     plan.tasks.forEach((task, taskIndex) => {
       const seen = new Set<number>();

@@ -1,6 +1,7 @@
-import type { CheckType } from '@engloop/types';
+import { AuditAction, type CheckType } from '@engloop/types';
 import { retryOnUniqueViolation, type Prisma, type PrismaClient } from '@engloop/db';
 import { plannerOutputSchema, type PlannerOutput } from '@engloop/schemas';
+import { assertPlannerPhaseScope, loadPlannerPhaseContext } from './planner-phase-scope';
 
 /**
  * Converts a validated planner output into real child tasks (spec section 7,
@@ -20,15 +21,7 @@ export class PlanMaterializer {
     plan = plannerOutputSchema.parse(plan);
     const parent = await this.prisma.task.findUniqueOrThrow({
       where: { id: parentTaskId },
-      select: {
-        id: true,
-        projectId: true,
-        repositoryId: true,
-        epicId: true,
-        featureId: true,
-        createdById: true,
-        maxAttempts: true,
-      },
+      select: { projectId: true },
     });
 
     // Retried as a whole: each child task mints a project-scoped key, so a
@@ -37,6 +30,16 @@ export class PlanMaterializer {
       this.prisma.$transaction(async (tx) => {
         // Match graph writers' project-first lock order before updating the parent task.
         await tx.$queryRaw`SELECT id FROM projects WHERE id = ${parent.projectId} FOR NO KEY UPDATE`;
+        await tx.$queryRaw`SELECT id FROM tasks WHERE id = ${parentTaskId} FOR UPDATE`;
+        const currentParent = await tx.task.findUniqueOrThrow({ where: { id: parentTaskId } });
+        if (currentParent.projectId !== parent.projectId)
+          throw new Error('Parent project changed during plan materialization');
+        const phaseContext = await loadPlannerPhaseContext(tx, currentParent);
+        assertPlannerPhaseScope(plan, phaseContext);
+        const projectContext = await tx.project.findUniqueOrThrow({
+          where: { id: parent.projectId },
+          select: { organizationId: true },
+        });
         // Persist the plan on the parent so the task detail page can show it.
         await tx.task.update({
           where: { id: parentTaskId },
@@ -62,10 +65,12 @@ export class PlanMaterializer {
           const child = await tx.task.create({
             data: {
               projectId: parent.projectId,
-              repositoryId: parent.repositoryId,
-              epicId: parent.epicId,
-              featureId: parent.featureId,
-              parentTaskId: parent.id,
+              phaseId: currentParent.phaseId,
+              ownerRole: planned.ownerRole ?? null,
+              repositoryId: currentParent.repositoryId,
+              epicId: currentParent.epicId,
+              featureId: currentParent.featureId,
+              parentTaskId: currentParent.id,
               key: `${project.key}-${String(project.taskSequence)}`,
               title: planned.title,
               description: planned.description,
@@ -77,8 +82,8 @@ export class PlanMaterializer {
               implementationNotes: planned.implementationNotes,
               suggestedFiles: planned.suggestedFiles,
               requiredChecks: planned.requiredChecks as CheckType[],
-              maxAttempts: parent.maxAttempts,
-              createdById: parent.createdById,
+              maxAttempts: currentParent.maxAttempts,
+              createdById: currentParent.createdById,
             },
           });
           createdTaskIds.push(child.id);
@@ -99,6 +104,31 @@ export class PlanMaterializer {
         if (edges.length > 0) {
           await tx.taskDependency.createMany({ data: edges });
         }
+
+        await tx.auditLog.createMany({
+          data: [
+            {
+              organizationId: projectContext.organizationId,
+              projectId: parent.projectId,
+              taskId: parentTaskId,
+              action: AuditAction.CONFIGURATION_CHANGED,
+              entityType: 'task',
+              entityId: parentTaskId,
+              summary: 'Materialized planner output',
+              metadata: { createdTaskIds, phaseScope: plan.phaseScope ?? null },
+            },
+            ...createdTaskIds.map((id) => ({
+              organizationId: projectContext.organizationId,
+              projectId: parent.projectId,
+              taskId: id,
+              action: AuditAction.CONFIGURATION_CHANGED,
+              entityType: 'task',
+              entityId: id,
+              summary: 'Created task from planner output',
+              metadata: { parentTaskId },
+            })),
+          ],
+        });
 
         return { createdTaskIds };
       }),
