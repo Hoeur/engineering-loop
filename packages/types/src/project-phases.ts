@@ -1,4 +1,4 @@
-import type { AgentRole, TaskStatus } from './enums';
+import type { AgentRole, TaskStatus, ProjectPhaseStatus } from './enums';
 
 export interface ProjectContract {
   objective: string | null;
@@ -7,10 +7,11 @@ export interface ProjectContract {
   acceptanceCriteria: string[];
 }
 
-/** Draft metadata; deliberately has no execution or acceptance status. */
+/** Planning lifecycle; activation does not start execution. */
 export interface ProjectPhaseSummary {
   id: string;
   projectId: string;
+  status: ProjectPhaseStatus;
   name: string;
   description: string | null;
   objective: string | null;

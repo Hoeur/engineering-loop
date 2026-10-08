@@ -15,7 +15,7 @@ type PhaseFields = CreateProjectPhaseDto;
 export type PhaseChange =
   | { kind: 'create'; fields: PhaseFields }
   | { kind: 'update'; phaseId: string; fields: PhaseFields }
-  | { kind: 'delete'; phaseId: string }
+  | { kind: 'delete' | 'activate' | 'reopen'; phaseId: string }
   | { kind: 'order'; phaseIds: string[] }
   | { kind: 'link' | 'unlink'; phaseId: string; taskId: string };
 
@@ -35,6 +35,10 @@ export const phaseService = {
         return (await api.post(path, change.fields)).data;
       case 'update':
         return (await api.patch(`${path}/${encodeURIComponent(change.phaseId)}`, change.fields))
+          .data;
+      case 'activate':
+      case 'reopen':
+        return (await api.post(`${path}/${encodeURIComponent(change.phaseId)}/${change.kind}`))
           .data;
       case 'delete':
         return (await api.delete(`${path}/${encodeURIComponent(change.phaseId)}`)).data;

@@ -519,8 +519,15 @@ model Project {
   @@map("projects")
 }
 
-/// Draft project organization only; no activation or acceptance lifecycle yet.
+enum ProjectPhaseStatus {
+  DRAFT
+  ACTIVE
+  ACCEPTED
+}
+
+/// Planning lifecycle; acceptance is reserved for evidence-gated workflow.
 model ProjectPhase {
+  status ProjectPhaseStatus @default(DRAFT)
   id          String   @id @default(cuid())
   projectId   String
   name        String
@@ -540,6 +547,7 @@ model ProjectPhase {
 
   @@unique([id, projectId])
   @@unique([projectId, position])
+  @@index([projectId, status])
   @@map("project_phases")
 }
 

@@ -1,3 +1,4 @@
+import { ProjectPhaseLifecycleService } from './project-phase-lifecycle.service';
 import { Module } from '@nestjs/common';
 import { TasksModule } from '../tasks/tasks.module';
 import { ProjectsController } from './projects.controller';
@@ -14,6 +15,7 @@ import { ProjectPhaseDependenciesService } from './project-phase-dependencies.se
   providers: [
     ProjectsService,
     ProjectPhasesService,
+    ProjectPhaseLifecycleService,
     ProjectContractService,
     ProjectPhaseDependenciesService,
   ],

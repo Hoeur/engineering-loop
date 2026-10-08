@@ -2,6 +2,7 @@ import type {
   AgentRunStatus,
   CheckStatus,
   Priority,
+  ProjectPhaseStatus,
   RiskLevel,
   RunStatus,
   Severity,
@@ -105,4 +106,10 @@ export const PROVIDER_TONE: Record<string, Tone> = {
   ANTHROPIC_API: 'info',
   LOCAL_LLM: 'neutral',
   CUSTOM_CLI: 'neutral',
+};
+
+export const PHASE_STATUS_TONE: Record<ProjectPhaseStatus, Tone> = {
+  DRAFT: 'outline',
+  ACTIVE: 'info',
+  ACCEPTED: 'success',
 };

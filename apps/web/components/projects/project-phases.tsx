@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { OrgRole, type ProjectPhaseSummary } from '@engloop/types';
+import { OrgRole, ProjectPhaseStatus, type ProjectPhaseSummary } from '@engloop/types';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@engloop/ui';
 import { EmptyState, ErrorState, QueryBoundary } from '@/components/common/states';
 import { useBoard, useCurrentUser } from '@/lib/queries';
@@ -12,6 +12,8 @@ import {
   useProjectPhases,
   type PhaseChange,
 } from '@/lib/project-phases';
+import { PHASE_STATUS_TONE } from '@/lib/status';
+import { PhaseLifecycleActions } from './phase-lifecycle-actions';
 import type { TaskSummary } from '@/lib/types';
 import { PhasePlanningForm } from './phase-planning-form';
 import { PlanningList } from './planning-fields';
@@ -21,7 +23,6 @@ interface PhaseCardProps {
   phase: ProjectPhaseSummary;
   phases: ProjectPhaseSummary[];
   index: number;
-  count: number;
   canManage: boolean;
   pending: boolean;
   tasks: TaskSummary[];
@@ -36,7 +37,6 @@ const PhaseCard = ({
   phase,
   phases,
   index,
-  count,
   canManage,
   pending,
   tasks,
@@ -49,12 +49,23 @@ const PhaseCard = ({
   const [taskId, setTaskId] = React.useState('');
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const assigned = new Set(detail.data?.tasks.map((task) => task.id));
-  const candidates = tasks.filter((task) => !assigned.has(task.id));
+  const canDelete = !phases
+    .slice(index + 1)
+    .some((item) => item.status !== ProjectPhaseStatus.DRAFT);
+  const draft = phase.status === ProjectPhaseStatus.DRAFT;
+  const candidates = tasks.filter(
+    (task) =>
+      !assigned.has(task.id) &&
+      (!task.phaseId ||
+        phases.some(
+          (source) => source.id === task.phaseId && source.status === ProjectPhaseStatus.DRAFT,
+        )),
+  );
   return (
     <Card className="min-w-0">
       <CardHeader>
-        <Badge tone="outline" className="w-fit">
-          Draft
+        <Badge tone={PHASE_STATUS_TONE[phase.status]} className="w-fit">
+          {phase.status}
         </Badge>
         <CardTitle className="break-words">
           {index + 1}. {phase.name}
@@ -67,7 +78,7 @@ const PhaseCard = ({
             <Button
               size="sm"
               variant="outline"
-              disabled={pending || index === 0}
+              disabled={pending || !draft || phases[index - 1]?.status !== ProjectPhaseStatus.DRAFT}
               onClick={() => move(-1)}
               aria-label={`Move ${phase.name} up`}
             >
@@ -76,24 +87,32 @@ const PhaseCard = ({
             <Button
               size="sm"
               variant="outline"
-              disabled={pending || index === count - 1}
+              disabled={pending || !draft || phases[index + 1]?.status !== ProjectPhaseStatus.DRAFT}
               onClick={() => move(1)}
               aria-label={`Move ${phase.name} down`}
             >
               Move down
             </Button>
-            <Button size="sm" variant="outline" disabled={pending} onClick={edit}>
+            <Button size="sm" variant="outline" disabled={pending || !draft} onClick={edit}>
               Edit
             </Button>
             <Button
               size="sm"
               variant="outline"
-              disabled={pending}
+              disabled={pending || !draft || !canDelete}
               onClick={() => setConfirmDelete(true)}
             >
               Delete
             </Button>
           </div>
+        ) : null}
+        {canManage ? (
+          <PhaseLifecycleActions phase={phase} pending={pending} change={change} />
+        ) : null}
+        {!draft ? (
+          <p className="text-xs text-muted-foreground">
+            Phase metadata, position and task membership are locked.
+          </p>
         ) : null}
         {confirmDelete ? (
           <div className="space-y-2 text-xs">
@@ -101,7 +120,7 @@ const PhaseCard = ({
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
-                disabled={pending}
+                disabled={pending || !draft || !canDelete}
                 onClick={() => change({ kind: 'delete', phaseId: phase.id })}
               >
                 Confirm delete
@@ -150,7 +169,7 @@ const PhaseCard = ({
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={pending}
+                        disabled={pending || !draft}
                         aria-label={`Unlink ${task.key}`}
                         onClick={() =>
                           change({ kind: 'unlink', phaseId: phase.id, taskId: task.id })
@@ -174,7 +193,7 @@ const PhaseCard = ({
               id={`phase-task-${phase.id}`}
               className="h-9 w-full min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-xs"
               value={taskId}
-              disabled={pending || !tasksReady || detail.isLoading || detail.isError}
+              disabled={pending || !draft || !tasksReady || detail.isLoading || detail.isError}
               onChange={(event) => setTaskId(event.target.value)}
             >
               <option value="">Choose a task</option>
@@ -189,6 +208,7 @@ const PhaseCard = ({
               size="sm"
               disabled={
                 pending ||
+                !draft ||
                 !tasksReady ||
                 detail.isLoading ||
                 detail.isError ||
@@ -224,7 +244,13 @@ export const ProjectPhases = ({ projectId }: { projectId: string }): React.JSX.E
   const move = (index: number, offset: number): void => {
     const ids = phases.data?.items.map((phase) => phase.id) ?? [];
     const other = index + offset;
-    if (other < 0 || other >= ids.length) return;
+    if (
+      other < 0 ||
+      other >= ids.length ||
+      phases.data?.items[index]?.status !== ProjectPhaseStatus.DRAFT ||
+      phases.data?.items[other]?.status !== ProjectPhaseStatus.DRAFT
+    )
+      return;
     [ids[index], ids[other]] = [ids[other]!, ids[index]!];
     change({ kind: 'order', phaseIds: ids });
   };
@@ -232,7 +258,8 @@ export const ProjectPhases = ({ projectId }: { projectId: string }): React.JSX.E
     <section className="mt-6 min-w-0 space-y-3" aria-label="Project phases">
       <h2 className="text-sm font-semibold">Project phases</h2>
       <p className="text-xs text-muted-foreground">
-        Draft planning only. Ordering and task links do not activate phases or schedule work.
+        Phase activation locks planning metadata and task membership. It does not schedule or start
+        work.
       </p>
       {user.isError ? (
         <ErrorState error={user.error} onRetry={() => void user.refetch()} entity="Current user" />
@@ -243,7 +270,15 @@ export const ProjectPhases = ({ projectId }: { projectId: string }): React.JSX.E
           phase={editing}
           phases={phases.data?.items ?? []}
           pending={mutation.isPending}
-          disabled={phases.isLoading || phases.isError}
+          disabled={
+            phases.isLoading ||
+            phases.isError ||
+            Boolean(
+              editing &&
+                phases.data?.items.find((phase) => phase.id === editing.id)?.status !==
+                  ProjectPhaseStatus.DRAFT,
+            )
+          }
           cancel={resetForm}
           save={(fields) => {
             mutation.reset();
@@ -301,7 +336,6 @@ export const ProjectPhases = ({ projectId }: { projectId: string }): React.JSX.E
                 phase={phase}
                 phases={data.items}
                 index={index}
-                count={data.items.length}
                 canManage={canManage}
                 pending={mutation.isPending}
                 tasks={board.data?.items ?? []}

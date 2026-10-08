@@ -475,6 +475,13 @@ export const WebhookEventStatus = asConst({
 });
 export type WebhookEventStatus = (typeof WebhookEventStatus)[keyof typeof WebhookEventStatus];
 
+export const ProjectPhaseStatus = asConst({
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+  ACCEPTED: 'ACCEPTED',
+});
+export type ProjectPhaseStatus = (typeof ProjectPhaseStatus)[keyof typeof ProjectPhaseStatus];
+
 /** Every enum object exported above, keyed by its Prisma enum name. */
 export const DOMAIN_ENUMS = Object.freeze({
   TaskStatus,
@@ -514,5 +521,6 @@ export const DOMAIN_ENUMS = Object.freeze({
   MemoryKind,
   EpicStatus,
   ProjectStatus,
+  ProjectPhaseStatus,
   WebhookEventStatus,
 });
