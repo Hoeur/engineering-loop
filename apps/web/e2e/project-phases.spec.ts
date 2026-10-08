@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext } from '@playwright/test';
-import { AgentRole, TaskStatus, type ProjectContract } from '@engloop/types';
+import { AgentRole, ProjectPhaseStatus, TaskStatus, type ProjectContract } from '@engloop/types';
 import { expect, test } from './fixtures';
 
 const apiUrl = (process.env.E2E_API_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
 interface Phase {
   id: string;
+  status: ProjectPhaseStatus;
   name: string;
   position: number;
   objective: string | null;
@@ -40,6 +41,8 @@ test('manages draft phases and task membership without changing task execution a
   request,
   authToken,
 }, testInfo) => {
+  // This scenario crosses contract edits, phase planning and lifecycle changes through the real API.
+  test.setTimeout(90_000);
   const headers = { authorization: `Bearer ${authToken}` };
   const suffix = randomUUID().slice(0, 8);
   const user = await read<{ organizationId: string }>(request, '/auth/me', authToken);
@@ -188,6 +191,52 @@ test('manages draft phases and task membership without changing task execution a
       card(secondName).getByRole('button', { name: `Unlink ${task!.key}`, exact: true }),
     ).toBeVisible();
 
+    await card(secondName).getByRole('button', { name: 'Activate phase', exact: true }).click();
+    await card(secondName).getByRole('button', { name: 'Confirm activation' }).click();
+    await expect(phases.getByRole('alert')).toContainText(/accepted/i);
+    expect(
+      (await read<{ items: Phase[] }>(request, path, authToken)).items.find(
+        (phase) => phase.id === createdIds[1],
+      )?.status,
+    ).toBe(ProjectPhaseStatus.DRAFT);
+    await card(secondName).getByRole('button', { name: 'Cancel', exact: true }).click();
+    await card(editedName)
+      .getByLabel('Link or move an existing project task')
+      .selectOption(task.id);
+    await card(editedName).getByRole('button', { name: 'Link task', exact: true }).click();
+    await expect(
+      card(editedName).getByRole('button', { name: `Unlink ${task.key}` }),
+    ).toBeVisible();
+    await card(editedName).getByRole('button', { name: 'Activate phase', exact: true }).click();
+    await card(editedName).getByRole('button', { name: 'Confirm activation' }).click();
+    await expect(card(editedName).getByText('ACTIVE', { exact: true })).toBeVisible();
+    await expect(
+      card(editedName).getByRole('button', { name: 'Edit', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      card(editedName).getByRole('button', { name: 'Delete', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      card(editedName).getByRole('button', { name: `Unlink ${task.key}` }),
+    ).toBeDisabled();
+    await expect(card(secondName).locator(`option[value="${task.id}"]`)).toHaveCount(0);
+    expect((await read<Task>(request, `/tasks/${task.id}`, authToken)).status).toBe(
+      TaskStatus.BACKLOG,
+    );
+    await page.reload();
+    await expect(card(editedName).getByText('ACTIVE', { exact: true })).toBeVisible();
+    await card(editedName).getByRole('button', { name: 'Reopen draft' }).click();
+    await card(editedName).getByRole('button', { name: 'Confirm reopen' }).click();
+    await expect(card(editedName).getByText('DRAFT', { exact: true })).toBeVisible();
+    await expect(card(editedName).getByRole('button', { name: 'Edit', exact: true })).toBeEnabled();
+    await card(secondName)
+      .getByLabel('Link or move an existing project task')
+      .selectOption(task.id);
+    await card(secondName).getByRole('button', { name: 'Link task', exact: true }).click();
+    await expect(
+      card(secondName).getByRole('button', { name: `Unlink ${task.key}` }),
+    ).toBeVisible();
+
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
@@ -202,6 +251,13 @@ test('manages draft phases and task membership without changing task execution a
     expect(afterDelete.phaseId).toBeNull();
     expect(afterDelete.status).toBe(task!.status);
   } finally {
+    const cleanupPhases = (await read<{ items: Phase[] }>(request, path, authToken)).items;
+    for (const phase of cleanupPhases.filter(
+      (item) => createdIds.includes(item.id) && item.status === ProjectPhaseStatus.ACTIVE,
+    )) {
+      const reopened = await request.post(`${apiUrl}${path}/${phase.id}/reopen`, { headers });
+      expect(reopened.ok(), await reopened.text()).toBe(true);
+    }
     const current = await read<Task>(request, `/tasks/${task!.id}`, authToken);
     if (originalPhaseId) {
       const restored = await request.put(`${apiUrl}${path}/${originalPhaseId}/tasks/${task!.id}`, {

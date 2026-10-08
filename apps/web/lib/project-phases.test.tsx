@@ -36,6 +36,16 @@ describe('project phase server state', () => {
     expect(mocks.delete).toHaveBeenCalledWith('/projects/project-1/phases/phase-1');
   });
 
+  it('posts bodyless lifecycle changes to encoded scoped routes', async () => {
+    await phaseService.change('project/1', { kind: 'activate', phaseId: 'phase/1' });
+    await phaseService.change('project/1', { kind: 'reopen', phaseId: 'phase/1' });
+    expect(mocks.post).toHaveBeenNthCalledWith(
+      1,
+      '/projects/project%2F1/phases/phase%2F1/activate',
+    );
+    expect(mocks.post).toHaveBeenNthCalledWith(2, '/projects/project%2F1/phases/phase%2F1/reopen');
+  });
+
   it('links and unlinks through the same project-scoped membership route', async () => {
     await phaseService.change('project-1', { kind: 'link', phaseId: 'phase-1', taskId: 'task-1' });
     await phaseService.change('project-1', {
@@ -55,30 +65,37 @@ describe('project phase server state', () => {
     );
   });
 
-  it('invalidates membership, phase counts, board and task detail caches only after success', async () => {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
-    const keys = [
-      phaseKeys.project('project-1'),
-      phaseKeys.detail('project-1', 'phase-1'),
-      ['board', 'project-1'],
-      ['tasks', 'task-1'],
-      ['projects', 'project-1'],
-    ];
-    keys.forEach((key) => client.setQueryData(key, {}));
-    client.setQueryData(phaseKeys.project('project-2'), {});
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    const { result } = renderHook(() => usePhaseChange('project-1'), { wrapper });
-    await act(async () => {
-      await result.current.mutateAsync({ kind: 'link', phaseId: 'phase-1', taskId: 'task-1' });
-    });
-    keys.forEach((key) => expect(client.getQueryState(key)?.isInvalidated).toBe(true));
-    expect(client.getQueryState(phaseKeys.project('project-2'))?.isInvalidated).toBe(false);
-    client.clear();
-  });
+  it.each(['link', 'activate', 'reopen'] as const)(
+    'invalidates phase, board and task caches after %s succeeds',
+    async (kind) => {
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      const keys = [
+        phaseKeys.project('project-1'),
+        phaseKeys.detail('project-1', 'phase-1'),
+        ['board', 'project-1'],
+        ['tasks', 'task-1'],
+        ['projects', 'project-1'],
+      ];
+      keys.forEach((key) => client.setQueryData(key, {}));
+      client.setQueryData(phaseKeys.project('project-2'), {});
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      );
+      const { result } = renderHook(() => usePhaseChange('project-1'), { wrapper });
+      await act(async () => {
+        await result.current.mutateAsync(
+          kind === 'link'
+            ? { kind, phaseId: 'phase-1', taskId: 'task-1' }
+            : { kind, phaseId: 'phase-1' },
+        );
+      });
+      keys.forEach((key) => expect(client.getQueryState(key)?.isInvalidated).toBe(true));
+      expect(client.getQueryState(phaseKeys.project('project-2'))?.isInvalidated).toBe(false);
+      client.clear();
+    },
+  );
 
   it('preserves cached phases and exposes mutation errors on a conflict', async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });

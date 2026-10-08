@@ -17,6 +17,7 @@ vi.mock('@/lib/project-phases', () => ({
 }));
 vi.mock('@/lib/queries', () => ({ useCurrentUser: mocks.user, useBoard: mocks.board }));
 const phase = {
+  status: 'DRAFT',
   id: 'phase-1',
   projectId: 'project-1',
   name: 'Foundation',
@@ -201,8 +202,9 @@ describe('ProjectPhases', () => {
   it('renders draft read-only phases for members without manager controls', () => {
     mocks.user.mockReturnValue(query({ role: 'MEMBER' }));
     render(<ProjectPhases projectId="project-1" />);
-    expect(screen.getByText(/Draft planning only/)).toBeInTheDocument();
+    expect(screen.getByText(/does not schedule or start work/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add phase' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Activate phase' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'ENG-1 · Define schema' })).toBeInTheDocument();
   });
@@ -243,5 +245,57 @@ describe('ProjectPhases', () => {
     });
     rerender(<ProjectPhases projectId="project-1" />);
     expect(screen.getByRole('alert')).toHaveTextContent('A running task cannot be moved');
+  });
+  it('confirms activation and reopening, and locks metadata and membership', () => {
+    const { rerender } = render(<ProjectPhases projectId="project-1" />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Activate phase' })[0]!);
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(screen.getByText(/All prerequisite phases must be accepted/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm activation' }));
+    expect(mocks.mutate).toHaveBeenCalledWith({ kind: 'activate', phaseId: 'phase-1' });
+    mocks.phases.mockReturnValue(
+      query({
+        items: [
+          { ...phase, status: 'ACTIVE' },
+          { ...phase, id: 'phase-2', name: 'Delivery' },
+        ],
+      }),
+    );
+    rerender(<ProjectPhases projectId="project-1" />);
+    expect(screen.getByText('ACTIVE')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Edit' })[0]).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Delete' })[0]).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move Delivery up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unlink ENG-1' })).toBeDisabled();
+    expect(screen.getAllByLabelText('Link or move an existing project task')[0]).toBeDisabled();
+    expect(
+      screen.getAllByLabelText('Link or move an existing project task')[1],
+    ).not.toHaveTextContent('ENG-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reopen' }));
+    expect(mocks.mutate).toHaveBeenCalledWith({ kind: 'reopen', phaseId: 'phase-1' });
+  });
+
+  it('locks accepted phases and prevents deletion shifting locked positions', () => {
+    mocks.phases.mockReturnValue(
+      query({ items: [phase, { ...phase, id: 'phase-2', name: 'Delivery', status: 'ACCEPTED' }] }),
+    );
+    render(<ProjectPhases projectId="project-1" />);
+    expect(screen.getAllByRole('button', { name: 'Delete' })[0]).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Edit' })[1]).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Activate phase' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Reopen draft' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Accept phase' })).not.toBeInTheDocument();
+  });
+
+  it('preserves in-flight form edits but blocks saving after concurrent activation', () => {
+    const { rerender } = render(<ProjectPhases projectId="project-1" />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]!);
+    fireEvent.change(screen.getByLabelText('Phase objective'), { target: { value: 'Unsaved' } });
+    mocks.phases.mockReturnValue(query({ items: [{ ...phase, status: 'ACTIVE' }] }));
+    rerender(<ProjectPhases projectId="project-1" />);
+    expect(screen.getByLabelText('Phase objective')).toHaveValue('Unsaved');
+    expect(screen.getByRole('button', { name: 'Save phase' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel edit' })).toBeEnabled();
   });
 });

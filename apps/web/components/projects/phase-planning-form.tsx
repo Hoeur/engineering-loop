@@ -58,7 +58,7 @@ export const PhasePlanningForm = ({
           required
           maxLength={160}
           value={name}
-          disabled={pending}
+          disabled={pending || disabled}
           onChange={(event) => setName(event.target.value)}
         />
       </label>
@@ -66,26 +66,26 @@ export const PhasePlanningForm = ({
         label="Description"
         value={description}
         onChange={setDescription}
-        disabled={pending}
+        disabled={pending || disabled}
       />
       <PlanningText
         label="Phase objective"
         value={objective}
         onChange={setObjective}
-        disabled={pending}
+        disabled={pending || disabled}
       />
       <PlanningText
         label="Deliverables (one per line)"
         value={deliverables}
         onChange={setDeliverables}
-        disabled={pending}
+        disabled={pending || disabled}
         maxLength={100000}
       />
       <PlanningText
         label="Phase acceptance criteria (one per line)"
         value={criteria}
         onChange={setCriteria}
-        disabled={pending}
+        disabled={pending || disabled}
         maxLength={100000}
       />
       <fieldset className="space-y-2">
@@ -96,7 +96,7 @@ export const PhasePlanningForm = ({
               <input
                 type="checkbox"
                 checked={roles.includes(role)}
-                disabled={pending}
+                disabled={pending || disabled}
                 onChange={(event) =>
                   setRoles(
                     event.target.checked ? [...roles, role] : roles.filter((item) => item !== role),
@@ -124,7 +124,7 @@ export const PhasePlanningForm = ({
                 className="mt-0.5 shrink-0"
                 type="checkbox"
                 checked={dependencies.includes(item.id)}
-                disabled={pending}
+                disabled={pending || disabled}
                 onChange={(event) =>
                   setDependencies(
                     event.target.checked

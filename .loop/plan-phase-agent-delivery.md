@@ -1,9 +1,10 @@
 # Plan — Customizable phase-based parallel agent delivery
 
 Created: 2026-10-06
-Status: CP-01A and CP-01B published. CP-01C graph hardening implemented and reviewed;
-phase lifecycle acceptance remains open. Current checkout gate evidence is in
-[CP-01C evidence](cp-01c-evidence.md).
+Status: CP-01A and CP-01B published. CP-01C graph hardening and phase lifecycle
+protections implemented and reviewed. Current checkout gate evidence is in
+[graph evidence](cp-01c-evidence.md) and
+[lifecycle evidence](cp-01c-lifecycle-evidence.md). CP-01D remains next.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -59,12 +60,14 @@ Dependencies: none. First implementation slice: CP-01A, phase CRUD with task mem
 - [ ] CP-01B: Record project contract and phase objectives, deliverables, criteria,
   required roles and dependencies; support explicit human edits before activation.
   Implementation contract and gates: [CP-01B evidence](cp-01b-evidence.md).
-- [ ] CP-01C: Validate phase/task DAGs: reject cycles, self-dependencies,
+- [x] CP-01C: Validate phase/task DAGs: reject cycles, self-dependencies,
   cross-project references and organization escapes; protect accepted/active phases.
   Task graph hardening is implemented: serialized API dependency writes, deep
   cycle checks and planner DAG validation before materialization. See
-  [CP-01C graph evidence](cp-01c-evidence.md). Phase lifecycle/activation and
-  accepted/active phase edit protections remain open; this does not close CP-01C.
+  [CP-01C graph evidence](cp-01c-evidence.md). Activation, idle-only reopening,
+  active/accepted contract and membership guards, and responsive controls are in
+  [lifecycle evidence](cp-01c-lifecycle-evidence.md). ACCEPTED is reserved for the
+  CP-06 evidence gate; activation does not start scheduling or task execution.
 - [ ] CP-01D: Planner outputs bounded active-phase tasks with objective, owner role,
   dependencies, suggested files, checks and criteria. Validate before materializing.
 

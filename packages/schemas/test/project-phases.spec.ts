@@ -14,6 +14,8 @@ describe('draft phase contracts', () => {
     );
     expect(createProjectPhaseSchema.safeParse({ name: ' ' }).success).toBe(false);
     expect(updateProjectPhaseSchema.safeParse({}).success).toBe(false);
+    for (const status of ['DRAFT', 'ACTIVE', 'ACCEPTED'])
+      expect(updateProjectPhaseSchema.safeParse({ name: 'Phase', status }).success).toBe(false);
   });
   it('rejects duplicate order IDs', () => {
     expect(orderProjectPhasesSchema.safeParse({ phaseIds: ['phase-a', 'phase-a'] }).success).toBe(

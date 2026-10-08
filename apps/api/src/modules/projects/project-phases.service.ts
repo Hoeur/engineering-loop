@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AuditAction, OrgRole, TaskStatus } from '@engloop/types';
+import { AuditAction, OrgRole } from '@engloop/types';
 import type { Prisma } from '@engloop/db';
 import type { CreateProjectPhaseDto, UpdateProjectPhaseDto } from '@engloop/schemas';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -11,14 +11,8 @@ import {
   phaseSummaryInclude,
 } from './project-phase-dependencies.service';
 
-const ACTIVE_STATUSES = [
-  TaskStatus.PLANNING,
-  TaskStatus.QUEUED,
-  TaskStatus.IMPLEMENTING,
-  TaskStatus.TESTING,
-  TaskStatus.REVIEWING,
-  TaskStatus.FIXING,
-];
+import { assertDraftPhase, assertEditablePhaseTask } from './project-phase-policy';
+
 const summaryInclude = phaseSummaryInclude;
 
 @Injectable()
@@ -42,7 +36,7 @@ export class ProjectPhasesService {
     if (lock) {
       const rows = await tx.$queryRaw<
         { id: string }[]
-      >`SELECT id FROM projects WHERE id = ${projectId} AND "organizationId" = ${organizationId} FOR UPDATE`;
+      >`SELECT id FROM projects WHERE id = ${projectId} AND "organizationId" = ${organizationId} FOR NO KEY UPDATE`;
       if (rows.length === 0) throw AppError.notFound('Project', projectId);
     } else if (
       !(await tx.project.findFirst({
@@ -155,6 +149,7 @@ export class ProjectPhasesService {
     return this.transaction(async (tx) => {
       await this.project(tx, organizationId, projectId, true);
       const existing = await this.phase(tx, projectId, phaseId);
+      assertDraftPhase(existing.status);
       const { dependencyIds, ...metadata } = dto;
       const dependenciesChanged =
         dependencyIds === undefined
@@ -183,9 +178,16 @@ export class ProjectPhasesService {
       _max: { position: true },
     });
     const offset = (maximum._max.position ?? -1) + 1;
-    for (const [position, id] of ids.entries())
+    const current = await tx.projectPhase.findMany({
+      where: { projectId },
+      select: { id: true, position: true },
+    });
+    const changed = [...ids.entries()].filter(
+      ([position, id]) => current.find((phase) => phase.id === id)?.position !== position,
+    );
+    for (const [position, id] of changed)
       await tx.projectPhase.update({ where: { id }, data: { position: offset + position } });
-    for (const [position, id] of ids.entries())
+    for (const [position, id] of changed)
       await tx.projectPhase.update({ where: { id }, data: { position } });
   }
 
@@ -193,7 +195,10 @@ export class ProjectPhasesService {
     this.manager(role);
     return this.transaction(async (tx) => {
       await this.project(tx, organizationId, projectId, true);
-      const phases = await tx.projectPhase.findMany({ where: { projectId }, select: { id: true } });
+      const phases = await tx.projectPhase.findMany({
+        where: { projectId },
+        select: { id: true, status: true, position: true },
+      });
       const expected = new Set(phases.map((phase) => phase.id));
       if (
         phaseIds.length !== expected.size ||
@@ -204,6 +209,19 @@ export class ProjectPhasesService {
           'INVALID_PHASE_ORDER',
           'Order must contain every phase in this project exactly once',
         );
+      for (const phase of phases)
+        if (phaseIds.indexOf(phase.id) !== phase.position) assertDraftPhase(phase.status);
+      if (phases.every((phase) => phaseIds.indexOf(phase.id) === phase.position))
+        return {
+          items: (
+            await tx.projectPhase.findMany({
+              where: { projectId },
+              orderBy: { position: 'asc' },
+              include: summaryInclude,
+            })
+          ).map(phaseSummary),
+          meta: {},
+        };
       await this.writeOrder(tx, projectId, phaseIds);
       await this.record(
         tx,
@@ -226,48 +244,6 @@ export class ProjectPhasesService {
     });
   }
 
-  private async assertEditableTask(
-    tx: Prisma.TransactionClient,
-    projectId: string,
-    taskId: string,
-  ) {
-    const rows = await tx.$queryRaw<
-      { id: string }[]
-    >`SELECT id FROM tasks WHERE id = ${taskId} AND "projectId" = ${projectId} FOR UPDATE`;
-    if (rows.length === 0) throw AppError.notFound('Task', taskId);
-    const task = await tx.task.findFirst({
-      where: { id: taskId, projectId },
-      select: {
-        id: true,
-        key: true,
-        title: true,
-        phaseId: true,
-        status: true,
-        workflowRuns: {
-          where: { status: { in: ['PENDING', 'RUNNING'] } },
-          select: { id: true },
-          take: 1,
-        },
-        agentRuns: {
-          where: { status: { in: ['PENDING', 'RUNNING'] } },
-          select: { id: true },
-          take: 1,
-        },
-      },
-    });
-    if (!task) throw AppError.notFound('Task', taskId);
-    if (
-      ACTIVE_STATUSES.some((status) => status === task.status) ||
-      task.workflowRuns.length > 0 ||
-      task.agentRuns.length > 0
-    )
-      throw AppError.conflict(
-        'TASK_PHASE_LOCKED',
-        'Phase membership cannot change while a task is queued or running',
-      );
-    return task;
-  }
-
   async membership(
     organizationId: string,
     role: string,
@@ -279,8 +255,8 @@ export class ProjectPhasesService {
     this.manager(role);
     return this.transaction(async (tx) => {
       await this.project(tx, organizationId, projectId, true);
-      await this.phase(tx, projectId, phaseId);
-      const task = await this.assertEditableTask(tx, projectId, taskId);
+      const target = await this.phase(tx, projectId, phaseId);
+      const task = await assertEditablePhaseTask(tx, projectId, taskId);
       if (!link && task.phaseId !== null && task.phaseId !== phaseId)
         throw AppError.conflict('TASK_PHASE_MISMATCH', 'Task belongs to another phase');
       if (task.phaseId === (link ? phaseId : null))
@@ -291,6 +267,9 @@ export class ProjectPhasesService {
           status: task.status,
           phaseId: task.phaseId,
         };
+      assertDraftPhase(target.status);
+      if (task.phaseId !== null)
+        assertDraftPhase((await this.phase(tx, projectId, task.phaseId)).status);
       const updated = await tx.task.update({
         where: { id: taskId },
         data: { phaseId: link ? phaseId : null },
@@ -312,14 +291,20 @@ export class ProjectPhasesService {
     this.manager(role);
     return this.transaction(async (tx) => {
       await this.project(tx, organizationId, projectId, true);
-      await this.phase(tx, projectId, phaseId);
+      const existing = await this.phase(tx, projectId, phaseId);
+      assertDraftPhase(existing.status);
+      const shifted = await tx.projectPhase.findMany({
+        where: { projectId, position: { gt: existing.position } },
+        select: { status: true },
+      });
+      for (const phase of shifted) assertDraftPhase(phase.status);
       await this.dependencies.assertDeletable(tx, projectId, phaseId);
       const tasks = await tx.task.findMany({
         where: { projectId, phaseId },
         select: { id: true },
         orderBy: { id: 'asc' },
       });
-      for (const task of tasks) await this.assertEditableTask(tx, projectId, task.id);
+      for (const task of tasks) await assertEditablePhaseTask(tx, projectId, task.id);
       await tx.task.updateMany({ where: { projectId, phaseId }, data: { phaseId: null } });
       await tx.projectPhase.delete({ where: { id: phaseId } });
       const remaining = await tx.projectPhase.findMany({
