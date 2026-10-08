@@ -46,6 +46,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { TaskTransitionService } from './task-transition.service';
 import { AgentRunsService } from '../agent-runs/agent-runs.service';
+import { TaskDependenciesService } from './task-dependencies.service';
 
 const TASK_LIST_INCLUDE = {
   project: { select: { id: true, name: true, key: true, slug: true } },
@@ -84,6 +85,10 @@ export class TasksService {
     private readonly transitions: TaskTransitionService,
     @Inject(WORKFLOW_ORCHESTRATOR) private readonly orchestrator: WorkflowOrchestrator,
     private readonly agentRuns: AgentRunsService,
+    private readonly dependencies: TaskDependenciesService = new TaskDependenciesService(
+      prisma,
+      audit,
+    ),
   ) {}
 
   // -------------------------------------------------------------------------
@@ -492,50 +497,7 @@ export class TasksService {
     dependsOnTaskId: string,
     type: 'BLOCKS' | 'RELATES_TO' | 'DUPLICATES',
   ) {
-    if (taskId === dependsOnTaskId) {
-      throw AppError.badRequest(
-        ApiErrorCode.TASK_DEPENDENCY_CYCLE,
-        'A task cannot depend on itself',
-      );
-    }
-    const task = await this.assertOwned(organizationId, taskId);
-    const dependency = await this.assertOwned(organizationId, dependsOnTaskId);
-    if (task.projectId !== dependency.projectId) {
-      throw AppError.badRequest(
-        'TASK_REFERENCE_PROJECT_MISMATCH',
-        'Task dependencies must belong to the same project',
-      );
-    }
-    if (await this.wouldCycle(taskId, dependsOnTaskId)) {
-      throw AppError.conflict(
-        ApiErrorCode.TASK_DEPENDENCY_CYCLE,
-        'That dependency would create a cycle',
-        { taskId, dependsOnTaskId },
-      );
-    }
-    return this.prisma.taskDependency.create({
-      data: { taskId, dependsOnTaskId, type },
-    });
-  }
-
-  /** Depth-limited DFS over the existing edges before inserting a new one. */
-  private async wouldCycle(taskId: string, dependsOnTaskId: string): Promise<boolean> {
-    const seen = new Set<string>();
-    const stack = [dependsOnTaskId];
-    let guard = 0;
-
-    while (stack.length > 0 && guard++ < 500) {
-      const current = stack.pop();
-      if (!current || seen.has(current)) continue;
-      if (current === taskId) return true;
-      seen.add(current);
-      const edges = await this.prisma.taskDependency.findMany({
-        where: { taskId: current },
-        select: { dependsOnTaskId: true },
-      });
-      stack.push(...edges.map((edge) => edge.dependsOnTaskId));
-    }
-    return false;
+    return this.dependencies.add(organizationId, taskId, dependsOnTaskId, type);
   }
 
   // -------------------------------------------------------------------------

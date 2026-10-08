@@ -1,6 +1,6 @@
 import type { CheckType } from '@engloop/types';
 import { retryOnUniqueViolation, type Prisma, type PrismaClient } from '@engloop/db';
-import type { PlannerOutput } from '@engloop/schemas';
+import { plannerOutputSchema, type PlannerOutput } from '@engloop/schemas';
 
 /**
  * Converts a validated planner output into real child tasks (spec section 7,
@@ -16,6 +16,8 @@ export class PlanMaterializer {
     parentTaskId: string,
     plan: PlannerOutput,
   ): Promise<{ createdTaskIds: string[] }> {
+    // Other callers can pass typed values without the agent-output parsing boundary.
+    plan = plannerOutputSchema.parse(plan);
     const parent = await this.prisma.task.findUniqueOrThrow({
       where: { id: parentTaskId },
       select: {
@@ -33,6 +35,8 @@ export class PlanMaterializer {
     // concurrent create can collide and the retry re-reads the sequence.
     return retryOnUniqueViolation(() =>
       this.prisma.$transaction(async (tx) => {
+        // Match graph writers' project-first lock order before updating the parent task.
+        await tx.$queryRaw`SELECT id FROM projects WHERE id = ${parent.projectId} FOR NO KEY UPDATE`;
         // Persist the plan on the parent so the task detail page can show it.
         await tx.task.update({
           where: { id: parentTaskId },
@@ -84,17 +88,16 @@ export class PlanMaterializer {
         const edges: { taskId: string; dependsOnTaskId: string }[] = [];
         plan.tasks.forEach((planned, index) => {
           const taskId = createdTaskIds[index];
-          if (!taskId) return;
+          if (!taskId) throw new Error('A planned task was not materialized');
           for (const dependencyIndex of planned.dependsOn) {
             const dependsOnTaskId = createdTaskIds[dependencyIndex];
-            if (dependsOnTaskId && dependsOnTaskId !== taskId) {
-              edges.push({ taskId, dependsOnTaskId });
-            }
+            if (!dependsOnTaskId) throw new Error('A planned dependency was not materialized');
+            edges.push({ taskId, dependsOnTaskId });
           }
         });
 
         if (edges.length > 0) {
-          await tx.taskDependency.createMany({ data: edges, skipDuplicates: true });
+          await tx.taskDependency.createMany({ data: edges });
         }
 
         return { createdTaskIds };
