@@ -142,17 +142,63 @@ export const plannedTaskSchema = z.object({
 });
 export type PlannedTask = z.infer<typeof plannedTaskSchema>;
 
-export const plannerOutputSchema = z.object({
-  summary: z.string().min(1),
-  approach: z.string().min(1),
-  risks: z.array(z.string()).default([]),
-  tasks: z.array(plannedTaskSchema).min(1, 'A plan must produce at least one task'),
-  acceptanceCriteria: z.array(z.string()).default([]),
-  requiredChecks: z.array(zCheckType).default([]),
-  dependencies: z.array(z.string()).default([]),
-  architectureNotes: z.array(z.string()).default([]),
-  openQuestions: z.array(z.string()).default([]),
-});
+export const plannerOutputSchema = z
+  .object({
+    summary: z.string().min(1),
+    approach: z.string().min(1),
+    risks: z.array(z.string()).default([]),
+    tasks: z.array(plannedTaskSchema).min(1, 'A plan must produce at least one task'),
+    acceptanceCriteria: z.array(z.string()).default([]),
+    requiredChecks: z.array(zCheckType).default([]),
+    dependencies: z.array(z.string()).default([]),
+    architectureNotes: z.array(z.string()).default([]),
+    openQuestions: z.array(z.string()).default([]),
+  })
+  .superRefine((plan, ctx) => {
+    let invalidReference = false;
+    plan.tasks.forEach((task, taskIndex) => {
+      const seen = new Set<number>();
+      task.dependsOn.forEach((dependencyIndex, edgeIndex) => {
+        let message: string | undefined;
+        if (dependencyIndex >= plan.tasks.length)
+          message = 'Dependency must reference a task in this plan';
+        else if (dependencyIndex === taskIndex) message = 'A planned task cannot depend on itself';
+        else if (seen.has(dependencyIndex)) message = 'Planned task dependencies must be unique';
+        seen.add(dependencyIndex);
+        if (message) {
+          invalidReference = true;
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tasks', taskIndex, 'dependsOn', edgeIndex],
+            message,
+          });
+        }
+      });
+    });
+    if (invalidReference) return;
+
+    // Iterative topological traversal avoids truncation and recursion limits on deep plans.
+    const remaining = plan.tasks.map((task) => task.dependsOn.length);
+    const dependents = plan.tasks.map(() => [] as number[]);
+    plan.tasks.forEach((task, taskIndex) => {
+      for (const dependencyIndex of task.dependsOn) dependents[dependencyIndex]?.push(taskIndex);
+    });
+    const ready = remaining.flatMap((count, index) => (count === 0 ? [index] : []));
+    for (let index = 0; index < ready.length; index += 1) {
+      for (const dependent of dependents[ready[index] ?? -1] ?? []) {
+        const count = (remaining[dependent] ?? 0) - 1;
+        remaining[dependent] = count;
+        if (count === 0) ready.push(dependent);
+      }
+    }
+    if (ready.length !== plan.tasks.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tasks'],
+        message: 'Planned task dependencies must not contain a cycle',
+      });
+    }
+  });
 export type PlannerOutput = z.infer<typeof plannerOutputSchema>;
 
 // ---------------------------------------------------------------------------

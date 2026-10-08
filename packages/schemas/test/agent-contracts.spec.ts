@@ -36,6 +36,46 @@ describe('planner output contract', () => {
   it('rejects free-form text where structured output is required', () => {
     expect(parseSafely(plannerOutputSchema, 'I made a plan!').ok).toBe(false);
   });
+
+  const graphPlan = (dependencies: number[][]) => ({
+    ...validPlan,
+    tasks: dependencies.map((dependsOn, index) => ({
+      title: `Task ${index}`,
+      objective: 'Deliver bounded work',
+      dependsOn,
+    })),
+  });
+
+  it.each([
+    ['self dependency', [[0]]],
+    ['out-of-range dependency', [[1]]],
+    ['duplicate dependency', [[], [0, 0]]],
+    ['two-task cycle', [[1], [0]]],
+    ['disconnected cycle', [[], [2], [1]]],
+  ])('rejects a %s', (_name, dependencies) => {
+    expect(plannerOutputSchema.safeParse(graphPlan(dependencies as number[][])).success).toBe(
+      false,
+    );
+  });
+
+  it('reports the invalid dependency path', () => {
+    const result = plannerOutputSchema.safeParse(graphPlan([[], [2]]));
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.path).toEqual(['tasks', 1, 'dependsOn', 0]);
+  });
+
+  it('accepts forward and backward references in a branching DAG', () => {
+    expect(plannerOutputSchema.safeParse(graphPlan([[2], [0, 2], [], [1, 2]])).success).toBe(true);
+  });
+
+  it('validates deep graphs without a traversal limit', () => {
+    const dependencies = Array.from({ length: 1200 }, (_, index) =>
+      index === 0 ? [] : [index - 1],
+    );
+    expect(plannerOutputSchema.safeParse(graphPlan(dependencies)).success).toBe(true);
+    dependencies[0] = [dependencies.length - 1];
+    expect(plannerOutputSchema.safeParse(graphPlan(dependencies)).success).toBe(false);
+  });
 });
 
 describe('review output contract', () => {

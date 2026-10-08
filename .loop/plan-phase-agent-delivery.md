@@ -1,7 +1,9 @@
 # Plan — Customizable phase-based parallel agent delivery
 
 Created: 2026-10-06
-Status: CP-01A and CP-01B implemented and validated; publication authorized. Root lint closure outstanding.
+Status: CP-01A and CP-01B published. CP-01C graph hardening implemented and reviewed;
+phase lifecycle acceptance remains open. Current checkout gate evidence is in
+[CP-01C evidence](cp-01c-evidence.md).
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -59,6 +61,10 @@ Dependencies: none. First implementation slice: CP-01A, phase CRUD with task mem
   Implementation contract and gates: [CP-01B evidence](cp-01b-evidence.md).
 - [ ] CP-01C: Validate phase/task DAGs: reject cycles, self-dependencies,
   cross-project references and organization escapes; protect accepted/active phases.
+  Task graph hardening is implemented: serialized API dependency writes, deep
+  cycle checks and planner DAG validation before materialization. See
+  [CP-01C graph evidence](cp-01c-evidence.md). Phase lifecycle/activation and
+  accepted/active phase edit protections remain open; this does not close CP-01C.
 - [ ] CP-01D: Planner outputs bounded active-phase tasks with objective, owner role,
   dependencies, suggested files, checks and criteria. Validate before materializing.
 
@@ -185,7 +191,9 @@ unavailable checks. Existing nested `.claude` lint contamination must be resolve
 or explicitly recorded; scoped lint is not silently substituted for the root gate.
 
 This document began as a planning-only change. CP-01A and CP-01B now have source
-implementation and linked verification evidence. Their checkboxes remain unchecked
-because root lint closure is outstanding. Publication is recorded in Git history. The four
+implementation and linked verification evidence. Their historical root lint
+limitation is recorded there; the 2026-10-08 graph continuation passes unqualified
+root lint in the managed checkout without nested `.claude/worktrees`. The previous
+checkout's lint configuration has not been changed. Publication is recorded in Git history. The four
 generated design PNGs are preserved. Migrations were applied only to isolated
 test databases; no deployment was changed.
