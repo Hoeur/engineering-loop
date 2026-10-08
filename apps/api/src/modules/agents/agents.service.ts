@@ -19,8 +19,21 @@ export class AgentsService {
     }
   }
 
-  private redactProvider<T extends { provider: { encryptedCredential: string | null; credentialIv: string | null; credentialAuthTag: string | null } }>(agent: T) {
-    const { encryptedCredential, credentialIv: _iv, credentialAuthTag: _tag, ...provider } = agent.provider;
+  private redactProvider<
+    T extends {
+      provider: {
+        encryptedCredential: string | null;
+        credentialIv: string | null;
+        credentialAuthTag: string | null;
+      };
+    },
+  >(agent: T) {
+    const {
+      encryptedCredential,
+      credentialIv: _iv,
+      credentialAuthTag: _tag,
+      ...provider
+    } = agent.provider;
     return { ...agent, provider: { ...provider, hasCredential: Boolean(encryptedCredential) } };
   }
 
@@ -55,19 +68,59 @@ export class AgentsService {
    * no agent render as "unassigned" rather than being hidden, so the gap is visible.
    */
   async team(organizationId: string, projectId?: string) {
-    const { items } = await this.list({ organizationId, projectId });
     const project = projectId
-      ? await this.prisma.project.findUnique({
-          where: { id: projectId },
-          select: { roleAssignments: true },
+      ? await this.prisma.project.findFirst({
+          where: { id: projectId, organizationId },
+          select: { roleAssignments: true, teamConfigured: true },
         })
       : null;
+    if (projectId && !project) throw AppError.notFound('Project', projectId);
+    const items = await this.prisma.agent.findMany({
+      where: {
+        organizationId,
+        enabled: true,
+        OR: projectId ? [{ projectId }, { projectId: null }] : [{ projectId: null }],
+        provider: { organizationId, enabled: true },
+        ...(project?.teamConfigured ? { teamMemberships: { some: { projectId } } } : {}),
+      },
+      orderBy: project?.teamConfigured
+        ? [{ role: 'asc' }, { id: 'asc' }]
+        : [{ role: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        organizationId: true,
+        projectId: true,
+        providerId: true,
+        name: true,
+        role: true,
+        model: true,
+        enabled: true,
+        maxTokens: true,
+        maxCostUsd: true,
+        timeoutMs: true,
+        maxRetries: true,
+        permissionLevel: true,
+        createdAt: true,
+        updatedAt: true,
+        provider: {
+          select: {
+            id: true,
+            key: true,
+            displayName: true,
+            kind: true,
+            healthy: true,
+            defaultModel: true,
+          },
+        },
+        _count: { select: { runs: true } },
+      },
+    });
     const assignments = (project?.roleAssignments ?? {}) as Record<string, string>;
 
     const roles = Object.values(AgentRole).map((role) => {
       const assignedId = assignments[role];
       const assigned =
-        items.find((agent) => agent.id === assignedId) ??
+        items.find((agent) => agent.id === assignedId && agent.role === role) ??
         items.find((agent) => agent.role === role && agent.projectId === projectId) ??
         items.find((agent) => agent.role === role && agent.projectId === null) ??
         null;
@@ -97,7 +150,10 @@ export class AgentsService {
     });
     if (!provider) throw AppError.notFound('AgentProvider', dto.providerKey);
     if (dto.projectId) {
-      const project = await this.prisma.project.findFirst({ where: { id: dto.projectId, organizationId }, select: { id: true } });
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, organizationId },
+        select: { id: true },
+      });
       if (!project) throw AppError.notFound('Project', dto.projectId);
     }
 

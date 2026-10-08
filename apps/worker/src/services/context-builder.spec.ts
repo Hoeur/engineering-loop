@@ -91,3 +91,63 @@ describe('ContextBuilder agent budget resolution', () => {
     expect(resolution).not.toHaveProperty('agentMaxCostUsd');
   });
 });
+
+describe('ContextBuilder explicit project roster', () => {
+  function configured(agent: unknown, assigned = 'outsider') {
+    const findFirst = vi.fn().mockResolvedValue(agent);
+    const builder = new ContextBuilder(
+      {
+        project: {
+          findUniqueOrThrow: vi
+            .fn()
+            .mockResolvedValue({
+              organizationId: 'org-1',
+              teamConfigured: true,
+              roleAssignments: { IMPLEMENTER: assigned },
+              organization: { defaultProviderKey: 'mock' },
+            }),
+        },
+        agent: { findFirst },
+      } as never,
+      { AGENT_DEFAULT_PROVIDER: 'mock' } as never,
+    );
+    return { builder, findFirst };
+  }
+
+  it('restricts both preferred assignment and every fallback to eligible members', async () => {
+    const { builder, findFirst } = configured(null);
+    await expect(builder.resolveRoleProvider('project-1', AgentRole.IMPLEMENTER)).rejects.toThrow(
+      'PROJECT_TEAM_ROLE_UNCOVERED',
+    );
+    expect(findFirst).toHaveBeenCalledTimes(3);
+    for (const [query] of findFirst.mock.calls) {
+      expect(query.where).toMatchObject({
+        teamMemberships: { some: { projectId: 'project-1' } },
+        enabled: true,
+        organizationId: 'org-1',
+        role: AgentRole.IMPLEMENTER,
+        provider: { organizationId: 'org-1', enabled: true },
+      });
+    }
+    expect(findFirst.mock.calls[1]?.[0].orderBy).toEqual({ id: 'asc' });
+    expect(findFirst.mock.calls[2]?.[0].orderBy).toEqual({ id: 'asc' });
+  });
+
+  it('falls back to a roster member when the preferred assignment is outside the roster', async () => {
+    const { builder, findFirst } = configured(null);
+    findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'member',
+        model: 'chosen',
+        maxCostUsd: 1,
+        maxTokens: 10,
+        timeoutMs: 100,
+        provider: { key: 'codex', enabled: true },
+      });
+    expect(await builder.resolveRoleProvider('project-1', AgentRole.IMPLEMENTER)).toMatchObject({
+      agentId: 'member',
+      providerKey: 'codex',
+    });
+  });
+});

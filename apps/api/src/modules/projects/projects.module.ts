@@ -1,4 +1,6 @@
 import { ProjectPhaseLifecycleService } from './project-phase-lifecycle.service';
+import { ProjectTeamService } from './project-team.service';
+import { ProjectTeamController } from './project-team.controller';
 import { Module } from '@nestjs/common';
 import { TasksModule } from '../tasks/tasks.module';
 import { ProjectsController } from './projects.controller';
@@ -11,9 +13,15 @@ import { ProjectPhaseDependenciesService } from './project-phase-dependencies.se
 
 @Module({
   imports: [TasksModule],
-  controllers: [ProjectsController, ProjectPhasesController, ProjectContractController],
+  controllers: [
+    ProjectsController,
+    ProjectPhasesController,
+    ProjectContractController,
+    ProjectTeamController,
+  ],
   providers: [
     ProjectsService,
+    ProjectTeamService,
     ProjectPhasesService,
     ProjectPhaseLifecycleService,
     ProjectContractService,

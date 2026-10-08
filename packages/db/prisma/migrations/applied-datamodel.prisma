@@ -491,6 +491,8 @@ model Project {
   costBudgetUsd   Decimal         @default(50) @db.Decimal(12, 4)
   /// Role -> agent-provider key overrides for this project.
   roleAssignments Json            @default("{}")
+  teamConfigured  Boolean         @default(false)
+  teamVersion     Int             @default(0)
   settings        Json            @default("{}")
   taskSequence    Int             @default(100)
   createdAt       DateTime        @default(now())
@@ -504,6 +506,7 @@ model Project {
   tasks        Task[]
   phases       ProjectPhase[]
   agents       Agent[]
+  teamMembers  ProjectTeamMember[]
   schedules    Schedule[]
   memories     ProjectMemory[]
   decisions    ArchitectureDecision[]
@@ -906,6 +909,7 @@ model Agent {
   project        Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   provider       AgentProvider       @relation(fields: [providerId], references: [id], onDelete: Restrict)
   configurations AgentConfiguration[]
+  teamMemberships ProjectTeamMember[]
   runs           AgentRun[]
   tasks          Task[]
 
@@ -913,6 +917,17 @@ model Agent {
   @@index([organizationId, role])
   @@index([projectId, role])
   @@map("agents")
+}
+
+model ProjectTeamMember {
+  projectId String
+  agentId   String
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, agentId])
+  @@index([agentId])
+  @@map("project_team_members")
 }
 
 model AgentConfiguration {
