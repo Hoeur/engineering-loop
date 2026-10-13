@@ -507,6 +507,7 @@ model Project {
   phases       ProjectPhase[]
   agents       Agent[]
   teamMembers  ProjectTeamMember[]
+  promptTemplates PromptTemplate[]
   schedules    Schedule[]
   memories     ProjectMemory[]
   decisions    ArchitectureDecision[]
@@ -520,6 +521,32 @@ model Project {
   @@unique([organizationId, key])
   @@index([organizationId, status])
   @@map("projects")
+}
+
+model PromptTemplate {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  role            AgentRole
+  currentRevision Int @default(1)
+  createdAt       DateTime @default(now())
+  revisions       PromptRevision[]
+
+  @@index([projectId, createdAt, id])
+  @@map("prompt_templates")
+}
+
+model PromptRevision {
+  id         String @id @default(cuid())
+  templateId String
+  template   PromptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  revision   Int
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@unique([templateId, revision])
+  @@map("prompt_revisions")
 }
 
 enum ProjectPhaseStatus {

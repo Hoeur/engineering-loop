@@ -1,6 +1,8 @@
 import { ProjectPhaseLifecycleService } from './project-phase-lifecycle.service';
 import { ProjectTeamService } from './project-team.service';
 import { ProjectTeamController } from './project-team.controller';
+import { ProjectPromptsController } from './project-prompts.controller';
+import { ProjectPromptsService } from './project-prompts.service';
 import { Module } from '@nestjs/common';
 import { TasksModule } from '../tasks/tasks.module';
 import { ProjectsController } from './projects.controller';
@@ -18,10 +20,12 @@ import { ProjectPhaseDependenciesService } from './project-phase-dependencies.se
     ProjectPhasesController,
     ProjectContractController,
     ProjectTeamController,
+    ProjectPromptsController,
   ],
   providers: [
     ProjectsService,
     ProjectTeamService,
+    ProjectPromptsService,
     ProjectPhasesService,
     ProjectPhaseLifecycleService,
     ProjectContractService,

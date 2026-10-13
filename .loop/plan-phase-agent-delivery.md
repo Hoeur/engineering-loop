@@ -7,7 +7,9 @@ protections implemented and reviewed. Current checkout gate evidence is in
 [lifecycle evidence](cp-01c-lifecycle-evidence.md). CP-01D bounded active-phase
 planning is implemented and reviewed; see [planner evidence](cp-01d-evidence.md).
 CP-02A explicit project team membership and role coverage is implemented; see
-[team evidence](cp-02a-evidence.md). CP-02B prompt templates and revisions is next.
+[team evidence](cp-02a-evidence.md). CP-02B prompt templates/revisions and contract
+validation are implemented; see [prompt evidence](cp-02b-evidence.md). Independent
+CP-02B review remains open; CP-02C execution snapshots are the next implementation slice.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -94,8 +96,12 @@ Dependencies: CP-01.
   uncovered roles fail closed. Legacy projects retain provider resolution.
   UI editors and immutable execution snapshots remain CP-02D and CP-02C.
   See [team evidence](cp-02a-evidence.md).
-- [ ] CP-02B: Add prompt templates/revisions with supported variables, input context
+- [~] CP-02B: Add prompt templates/revisions with supported variables, input context
   and output contracts. Reject unresolved variables and invalid outputs.
+  Implemented tenant-scoped append-only revisions, bounded literal substitution,
+  task/project/phase preview and validation against existing role output contracts.
+  Source review and automated gates are recorded in [prompt evidence](cp-02b-evidence.md);
+  independent review remains open. Execution binding remains CP-02C and UI CP-02D.
 - [ ] CP-02C: Snapshot task, prompt, effective agent/provider settings, budgets,
   permissions and artifact revisions atomically before enqueuing an execution.
 - [ ] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
