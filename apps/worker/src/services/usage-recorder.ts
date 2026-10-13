@@ -67,6 +67,7 @@ export class UsageRecorder {
   /** Returns true when the task or project has burned through its budget. */
   async budgetExceeded(
     taskId: string,
+    frozenLimit?: number,
   ): Promise<{ exceeded: boolean; spent: number; limit: number }> {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
@@ -75,7 +76,16 @@ export class UsageRecorder {
     if (!task) return { exceeded: false, spent: 0, limit: 0 };
 
     const spent = Number(task.actualCost);
-    const limit = Number(task.project.costBudgetUsd);
+    const currentLimit = Number(task.project.costBudgetUsd);
+    const positiveLimits = [frozenLimit, currentLimit].filter(
+      (value): value is number => value !== undefined && value > 0,
+    );
+    const limit =
+      frozenLimit === undefined
+        ? currentLimit
+        : positiveLimits.length
+          ? Math.min(...positiveLimits)
+          : 0;
     return { exceeded: limit > 0 && spent >= limit, spent, limit };
   }
 }

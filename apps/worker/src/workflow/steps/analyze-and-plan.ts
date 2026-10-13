@@ -10,6 +10,7 @@ import {
   loadPlannerPhaseContext,
 } from '../../services/planner-phase-scope';
 import type { StepHandler } from './types';
+import { readExecutionSnapshot } from '../../services/execution-snapshot';
 
 /**
  * ANALYZE_REPOSITORY — the planner inspects the repository.
@@ -89,8 +90,22 @@ export const planStep: StepHandler = async (context) => {
     return { status: RunStatus.FAILED, error: 'No workspace available for planning' };
   }
 
-  const currentParent = await worker.prisma.task.findUniqueOrThrow({ where: { id: task.id } });
-  const phaseContext = await loadPlannerPhaseContext(worker.prisma, currentParent);
+  const snapshot =
+    run.executionSnapshot == null
+      ? undefined
+      : readExecutionSnapshot(run.executionSnapshot, {
+          taskId: task.id,
+          projectId: task.projectId,
+          organizationId: task.project.organizationId,
+        });
+  const currentParent =
+    snapshot?.task ?? (await worker.prisma.task.findUniqueOrThrow({ where: { id: task.id } }));
+  const phaseContext = snapshot
+    ? snapshot.phaseContext
+    : await loadPlannerPhaseContext(worker.prisma, {
+        phaseId: currentParent.phaseId,
+        projectId: task.projectId,
+      });
   const input = plannerInputSchema.parse({
     requirement: state.requirement || currentParent.description || currentParent.title,
     objective: currentParent.objective,
@@ -140,7 +155,17 @@ export const createTasksStep: StepHandler = async (context) => {
     return { status: RunStatus.FAILED, error: 'No valid plan is available to materialise' };
   }
 
-  const { createdTaskIds } = await worker.plans.materialize(task.id, parsed.data);
+  const snapshot =
+    run.executionSnapshot == null
+      ? undefined
+      : readExecutionSnapshot(run.executionSnapshot, {
+          taskId: task.id,
+          projectId: task.projectId,
+          organizationId: task.project.organizationId,
+        });
+  const { createdTaskIds } = snapshot
+    ? await worker.plans.materialize(task.id, parsed.data, snapshot)
+    : await worker.plans.materialize(task.id, parsed.data);
 
   return {
     status: RunStatus.SUCCEEDED,

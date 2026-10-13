@@ -10,7 +10,9 @@ CP-02A team membership, role coverage and the project editor are implemented;
 browser acceptance and independent review remain open. See
 [team evidence](cp-02a-evidence.md). CP-02B prompt templates/revisions and contract
 validation are implemented; see [prompt evidence](cp-02b-evidence.md). Independent
-CP-02B review remains open; CP-02C execution snapshots are the next implementation slice.
+CP-02B review remains open. CP-02C opt-in configuration snapshots and worker
+binding are implemented; exact Git/artifact replay remains open. See
+[snapshot evidence](cp-02c-evidence.md). CP-02D editors/preview are still pending.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -31,15 +33,15 @@ Reference design: [customizable flow](../docs/images/engloop-customizable-phase-
 
 ## Existing code to extend
 
-| Capability | Existing source | Extension needed |
-| --- | --- | --- |
-| Tasks, subtasks, dependencies | `packages/db/prisma/schema.prisma`: Task, TaskDependency | Phase membership, revisions and acceptance records |
-| Task CRUD and dependency routes | `apps/api/src/modules/tasks/tasks.controller.ts` | Phase-scoped editing and immutable execution snapshots |
-| Agent CRUD/configuration | `apps/api/src/modules/agents`; Agent, AgentConfiguration | Effective config snapshots, team membership and prompt revisions |
-| Planner child-task creation | `apps/worker/src/services/plan-materializer.ts` | Plan only active phase, validate and schedule small deliverables |
-| Step-based workflow | `packages/workflow/src/engineering-workflow.ts` | Add opt-in phase/team orchestration alongside legacy workflow |
-| Checks/review/finalization | `apps/worker/src/workflow/steps` | Incremental evidence tied to exact artifacts and commits |
-| Runtime isolation | `apps/worker/src/execution` | Preserve isolation, limits, cancellation and cleanup per invocation |
+| Capability                      | Existing source                                          | Extension needed                                                    |
+| ------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
+| Tasks, subtasks, dependencies   | `packages/db/prisma/schema.prisma`: Task, TaskDependency | Phase membership, revisions and acceptance records                  |
+| Task CRUD and dependency routes | `apps/api/src/modules/tasks/tasks.controller.ts`         | Phase-scoped editing and immutable execution snapshots              |
+| Agent CRUD/configuration        | `apps/api/src/modules/agents`; Agent, AgentConfiguration | Effective config snapshots, team membership and prompt revisions    |
+| Planner child-task creation     | `apps/worker/src/services/plan-materializer.ts`          | Plan only active phase, validate and schedule small deliverables    |
+| Step-based workflow             | `packages/workflow/src/engineering-workflow.ts`          | Add opt-in phase/team orchestration alongside legacy workflow       |
+| Checks/review/finalization      | `apps/worker/src/workflow/steps`                         | Incremental evidence tied to exact artifacts and commits            |
+| Runtime isolation               | `apps/worker/src/execution`                              | Preserve isolation, limits, cancellation and cleanup per invocation |
 
 Stack: Next.js/React, TanStack Query for server state, Zustand for UI state,
 NestJS, Redis/BullMQ, PostgreSQL/Prisma, TypeScript/Zod, Docker, Git/GitHub,
@@ -61,25 +63,25 @@ acceptance requires the remaining P1 runtime and P2 delivery prerequisites.
 Dependencies: none. First implementation slice: CP-01A, phase CRUD with task membership.
 
 - [ ] CP-01A: Design ProjectPhase relations and shared schemas; phase CRUD,
-  phase ordering and linking existing Tasks; read/write UI with loading/error/empty states.
-  Implementation and gate evidence: [CP-01A evidence](cp-01a-evidence.md).
+      phase ordering and linking existing Tasks; read/write UI with loading/error/empty states.
+      Implementation and gate evidence: [CP-01A evidence](cp-01a-evidence.md).
 - [ ] CP-01B: Record project contract and phase objectives, deliverables, criteria,
-  required roles and dependencies; support explicit human edits before activation.
-  Implementation contract and gates: [CP-01B evidence](cp-01b-evidence.md).
+      required roles and dependencies; support explicit human edits before activation.
+      Implementation contract and gates: [CP-01B evidence](cp-01b-evidence.md).
 - [x] CP-01C: Validate phase/task DAGs: reject cycles, self-dependencies,
-  cross-project references and organization escapes; protect accepted/active phases.
-  Task graph hardening is implemented: serialized API dependency writes, deep
-  cycle checks and planner DAG validation before materialization. See
-  [CP-01C graph evidence](cp-01c-evidence.md). Activation, idle-only reopening,
-  active/accepted contract and membership guards, and responsive controls are in
-  [lifecycle evidence](cp-01c-lifecycle-evidence.md). ACCEPTED is reserved for the
-  CP-06 evidence gate; activation does not start scheduling or task execution.
+      cross-project references and organization escapes; protect accepted/active phases.
+      Task graph hardening is implemented: serialized API dependency writes, deep
+      cycle checks and planner DAG validation before materialization. See
+      [CP-01C graph evidence](cp-01c-evidence.md). Activation, idle-only reopening,
+      active/accepted contract and membership guards, and responsive controls are in
+      [lifecycle evidence](cp-01c-lifecycle-evidence.md). ACCEPTED is reserved for the
+      CP-06 evidence gate; activation does not start scheduling or task execution.
 - [x] CP-01D: Planner outputs bounded active-phase tasks with objective, owner role,
-  dependencies, suggested files, checks and criteria. Validate before materializing.
-  Phased parent tasks require ACTIVE status and a matching phase/version binding;
-  generated children retain their phase and owner role. Unphased planning remains
-  compatible. This creates BACKLOG tasks; scheduling and immutable input snapshots
-  remain CP-03 and CP-02. See [planner evidence](cp-01d-evidence.md).
+      dependencies, suggested files, checks and criteria. Validate before materializing.
+      Phased parent tasks require ACTIVE status and a matching phase/version binding;
+      generated children retain their phase and owner role. Unphased planning remains
+      compatible. This creates BACKLOG tasks; scheduling and immutable input snapshots
+      remain CP-03 and CP-02. See [planner evidence](cp-01d-evidence.md).
 
 Acceptance: create/edit a project with three phases; link/edit tasks; invalid DAGs
 and cross-tenant references fail; phase 2 cannot activate before its prerequisites
@@ -91,22 +93,28 @@ forward migration tests pass; no existing data is deleted.
 Dependencies: CP-01.
 
 - [ ] CP-02A: Reuse Agent/AgentConfiguration; define team membership and required
-  role coverage without assuming role names imply permissions.
-  Implementation adds opt-in explicit project rosters, versioned replacement,
-  project/phase coverage, tenant/provider eligibility checks, deterministic worker
-  selection and a responsive project editor. Missing configured roles fail closed;
-  unconfigured projects keep legacy selection. The checkbox remains open for
-  browser acceptance and independent review. See [team evidence](cp-02a-evidence.md).
+      role coverage without assuming role names imply permissions.
+      Implementation adds opt-in explicit project rosters, versioned replacement,
+      project/phase coverage, tenant/provider eligibility checks, deterministic worker
+      selection and a responsive project editor. Missing configured roles fail closed;
+      unconfigured projects keep legacy selection. The checkbox remains open for
+      browser acceptance and independent review. See [team evidence](cp-02a-evidence.md).
 - [~] CP-02B: Add prompt templates/revisions with supported variables, input context
   and output contracts. Reject unresolved variables and invalid outputs.
   Implemented tenant-scoped append-only revisions, bounded literal substitution,
   task/project/phase preview and validation against existing role output contracts.
   Source review and automated gates are recorded in [prompt evidence](cp-02b-evidence.md);
-  independent review remains open. Execution binding remains CP-02C and UI CP-02D.
-- [ ] CP-02C: Snapshot task, prompt, effective agent/provider settings, budgets,
+  independent review remains open. Opt-in execution binding is implemented by
+  CP-02C; UI remains CP-02D.
+- [~] CP-02C: Snapshot task, prompt, effective agent/provider settings, budgets,
   permissions and artifact revisions atomically before enqueuing an execution.
+  Opt-in configuration capture, pinned worker inputs, policy narrowing and
+  immutable invocation context are implemented and independently reviewed.
+  Additive migration and PostgreSQL proof are in [snapshot evidence](cp-02c-evidence.md).
+  Artifact IDs/hashes are captured; full immutable Git/artifact replay and a
+  historical executable output-contract registry remain open.
 - [ ] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
-  Permissions can only narrow the caller/project policy; secrets are never previewed.
+      Permissions can only narrow the caller/project policy; secrets are never previewed.
 
 Acceptance: add/edit each configuration surface; an old run remains reproducible
 after edits; disabled or unauthorized agents cannot be selected; credentials never
@@ -117,13 +125,13 @@ appear in snapshots, prompts or browser responses.
 Dependencies: CP-01, CP-02.
 
 - [ ] CP-03A: Add a pure dependency-aware readiness policy in packages/workflow.
-  Plan/design/test-preparation/review-contract items may start before code exists.
+      Plan/design/test-preparation/review-contract items may start before code exists.
 - [ ] CP-03B: Worker atomically claims eligible items with expiring leases,
-  fencing tokens and organization/project/team concurrency limits.
+      fencing tokens and organization/project/team concurrency limits.
 - [ ] CP-03C: Persist enqueue intent transactionally; dispatch/reconcile jobs
-  idempotently so DB writes and queue delivery cannot lose or duplicate work.
+      idempotently so DB writes and queue delivery cannot lose or duplicate work.
 - [ ] CP-03D: Add edit ownership, normalized paths and conflict detection.
-  Each agent uses an isolated worktree; lease conflicts restrict integration edits.
+      Each agent uses an isolated worktree; lease conflicts restrict integration edits.
 
 Acceptance: multiple workers racing for one item produce one valid claim;
 independent items run concurrently; blocked items cannot start; no conflicting
@@ -134,13 +142,13 @@ file edits or duplicate evidence persists; expired owners cannot write late resu
 Dependencies: CP-03.
 
 - [ ] CP-04A: Persist typed events/messages referencing work items and artifact
-  revisions; deduplicate delivery and validate tenant/role authorization.
+      revisions; deduplicate delivery and validate tenant/role authorization.
 - [ ] CP-04B: Trigger QA/review on ready increments. Findings become scoped fix
-  items with bounded retries; review contracts can run from phase start.
+      items with bounded retries; review contracts can run from phase start.
 - [ ] CP-04C: Owner coordinates integration onto a phase branch. Review/test
-  evidence references exact commits; conflicts create explicit work items.
+      evidence references exact commits; conflicts create explicit work items.
 - [ ] CP-04D: Re-run affected checks after integration; pre-integration approval
-  never automatically approves a changed combined diff.
+      never automatically approves a changed combined diff.
 
 Acceptance: planner/designer/QA/reviewer contribute before full implementation
 finishes; independent work continues during feedback; an increment can fail
@@ -151,13 +159,13 @@ without falsely accepting the phase; stale evidence is rejected after integratio
 Dependencies: CP-02, CP-04.
 
 - [ ] CP-05A: Show phase progress, role activity, ready/claimed/working/review/
-  accepted states, dependency blockers, budgets, findings and evidence.
+      accepted states, dependency blockers, budgets, findings and evidence.
 - [ ] CP-05B: Add work during execution with validation and readiness scheduling.
-  Edit queued work by revision; use explicit next-run or cancel/restart actions for running work.
+      Edit queued work by revision; use explicit next-run or cancel/restart actions for running work.
 - [ ] CP-05C: Cancel affected runs and dependent work safely; old fencing tokens
-  prevent late writes. Changing an accepted phase creates a new acceptance revision.
+      prevent late writes. Changing an accepted phase creates a new acceptance revision.
 - [ ] CP-05D: Add authenticated pushed updates with reconnect/cursor handling,
-  query invalidation and polling fallback; preserve 375px responsive layouts.
+      query invalidation and polling fallback; preserve 375px responsive layouts.
 
 Acceptance: edits cannot mutate active snapshots; a canceled revision cannot
 resurrect work; users understand what was invalidated and why; reconnect restores
@@ -168,13 +176,13 @@ board state without duplicating events.
 Dependencies: CP-04, CP-05; live recovery requires P1 readiness.
 
 - [ ] CP-06A: Task acceptance evaluates required outputs, current check results,
-  required reviews and unresolved blocking findings from persisted evidence.
+      required reviews and unresolved blocking findings from persisted evidence.
 - [ ] CP-06B: Phase acceptance verifies required tasks, phase criteria and
-  integrated commit evidence; transition next dependent phase atomically.
+      integrated commit evidence; transition next dependent phase atomically.
 - [ ] CP-06C: Preserve final completion rules: checks/review, no critical/high
-  findings, clean committed worktree, and actual GitHub delivery when required.
+      findings, clean committed worktree, and actual GitHub delivery when required.
 - [ ] CP-06D: Reconcile leases/jobs/runtime containers after worker death;
-  stop expired executions, restore eligible work and bound retries/spend.
+      stop expired executions, restore eligible work and bound retries/spend.
 
 Acceptance: only current evidence opens a gate; duplicate gate jobs cannot advance
 twice; unresolved budgets/blockers reach human review; injected crashes do not
@@ -185,11 +193,11 @@ leave uncontrolled processes or accept stale results.
 Dependencies: CP-01–CP-06; P1/P2 for live provider/GitHub acceptance.
 
 - [ ] CP-07A: Mock multi-phase scenario with all required roles, concurrent work,
-  fixes, config edits, cancellation and restart; capture durable evidence.
+      fixes, config edits, cancellation and restart; capture durable evidence.
 - [ ] CP-07B: Live controlled-repository scenario with real providers and GitHub
-  PR; verify usage/cost, secret redaction, two-tenant isolation and runtime cleanup.
+      PR; verify usage/cost, secret redaction, two-tenant isolation and runtime cleanup.
 - [ ] CP-07C: Enable opt-in project mode, migration/backfill, operational docs and
-  feature rollback. Keep legacy workflows available during staged adoption.
+      feature rollback. Keep legacy workflows available during staged adoption.
 
 Acceptance: repeatable full scenario passes without skipped required roles or
 invented evidence; restart and duplicate-event scenarios pass; independent review

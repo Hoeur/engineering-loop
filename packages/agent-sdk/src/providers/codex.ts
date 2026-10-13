@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { extractJson } from '@engloop/schemas';
 import { AgentProviderKind, AgentRole } from '@engloop/types';
 import { z } from 'zod';
+import type { AgentTaskContext } from '@engloop/schemas';
+
+const sandboxFor = (context: AgentTaskContext): string =>
+  context.execution &&
+  (context.project.permissionLevel === 'LEVEL_0_OBSERVE' ||
+    context.project.permissionLevel === 'LEVEL_1_PLAN' ||
+    context.role !== AgentRole.IMPLEMENTER)
+    ? 'read-only'
+    : 'workspace-write';
 import {
   CliCodingAgentProvider,
   type CliAgentOptions,
@@ -106,9 +115,9 @@ export class CodexAgentProvider extends CliCodingAgentProvider {
         'exec',
         '--ignore-user-config',
         '--sandbox',
-        'workspace-write',
+        sandboxFor(context),
         '--model',
-        options.model,
+        context.execution?.model ?? options.model,
         '--cd',
         context.workspacePath,
         '--output-schema',
@@ -118,13 +127,13 @@ export class CodexAgentProvider extends CliCodingAgentProvider {
         outputFile,
         '-',
       ],
-      buildResumeArgs: (sessionId, _context, schemaFile, outputFile) => [
+      buildResumeArgs: (sessionId, context, schemaFile, outputFile) => [
         'exec',
         '--ignore-user-config',
         '--sandbox',
-        'workspace-write',
+        sandboxFor(context),
         '--model',
-        options.model,
+        context.execution?.model ?? options.model,
         '--output-schema',
         schemaFile,
         '--json',

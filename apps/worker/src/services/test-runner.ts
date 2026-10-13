@@ -16,6 +16,7 @@ export interface RunChecksInput {
   traceId: string;
   workflowRunId?: string;
   workflowStepId?: string;
+  commandsOverride?: Record<string, string>;
 }
 
 export interface RunChecksOutcome {
@@ -150,7 +151,8 @@ export class TestRunner {
       },
     });
 
-    const commands = (task.repository?.commands ?? {}) as Record<string, string>;
+    const commands =
+      input.commandsOverride ?? ((task.repository?.commands ?? {}) as Record<string, string>);
     const runLogger = logger.withContext({
       traceId: input.traceId,
       taskId: input.taskId,

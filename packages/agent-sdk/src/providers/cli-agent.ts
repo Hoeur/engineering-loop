@@ -223,6 +223,7 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
         memory: context.memory,
         guidance: context.guidance,
         input: context.input,
+        ...(context.execution ? { execution: context.execution, budget: context.budget } : {}),
         responseSchema,
         instructions:
           'Respond with a single JSON object matching responseSchema. Do not wrap it in prose. ' +
@@ -382,7 +383,11 @@ export class CliCodingAgentProvider implements CodingAgentProvider {
       rawOutput,
       usage: providerUsage ?? estimatedUsage,
       estimatedCostUsd:
-        providerCostUsd ?? estimateCostUsd(providerUsage ?? estimatedUsage, this.options.model),
+        providerCostUsd ??
+        estimateCostUsd(
+          providerUsage ?? estimatedUsage,
+          context.execution?.model ?? this.options.model,
+        ),
       startedAt: startedAt.toISOString(),
       completedAt: completedAt.toISOString(),
       durationMs: completedAt.getTime() - startedAt.getTime(),

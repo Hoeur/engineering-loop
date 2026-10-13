@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { executionSelectionSchema } from './execution-snapshots';
 import {
   branchNameSchema,
   cuidLike,
@@ -206,6 +207,7 @@ export const createTaskDependencySchema = z.object({
 });
 
 export const planTaskSchema = z.object({
+  execution: executionSelectionSchema.optional(),
   requirement: z.string().max(20000).optional(),
   constraints: z.array(z.string().max(500)).default([]),
   targetPaths: z.array(z.string().max(500)).default([]),
@@ -213,6 +215,7 @@ export const planTaskSchema = z.object({
 export type PlanTaskDto = z.infer<typeof planTaskSchema>;
 
 export const runTaskSchema = z.object({
+  execution: executionSelectionSchema.optional(),
   workflowKey: z.string().max(80).default('engineering-task'),
   /** Skips planning when the task already carries acceptance criteria. */
   skipPlanning: z.boolean().default(false),

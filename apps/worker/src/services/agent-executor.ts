@@ -14,6 +14,8 @@ import type { AuditWriter } from './audit-writer';
 import type { UsageRecorder } from './usage-recorder';
 import type { ContextBuilder } from './context-builder';
 import type { CredentialResolver } from './credential-resolver';
+import type { WorkflowExecutionSnapshot } from '@engloop/schemas';
+import { narrowPermission, readExecutionSnapshot } from './execution-snapshot';
 import { claudeCodeCliAuth, codexCliAuth, type CliAuth } from '../provider-auth';
 import {
   configuredProviderCommand,
@@ -72,18 +74,50 @@ export class AgentExecutor {
         id: true,
         key: true,
         projectId: true,
-        project: { select: { organizationId: true } },
+        project: {
+          select: {
+            organizationId: true,
+            permissionLevel: true,
+            teamConfigured: true,
+            costBudgetUsd: true,
+          },
+        },
       },
     });
 
-    await this.assertWorkflowOwnership(input, task.projectId);
+    const snapshot = await this.assertWorkflowOwnership(
+      input,
+      task.projectId,
+      task.project.organizationId,
+    );
+    const roleSnapshot = snapshot?.roles.find((role) => role.role === input.role);
+    if (snapshot && !roleSnapshot)
+      throw new Error(`Execution snapshot has no configuration for ${input.role}`);
+    if (
+      roleSnapshot?.providerKind === 'CODEX' &&
+      this.deps.env.COMMAND_ALLOWLIST.some(
+        (command) => !roleSnapshot.budget.allowedCommands.includes(command),
+      )
+    ) {
+      throw new ProviderUnavailableError(
+        roleSnapshot.providerKey,
+        'Codex cannot enforce a narrowed snapshot command allowlist',
+      );
+    }
 
-    const resolution = await contextBuilder.resolveRoleProvider(task.projectId, input.role);
+    const resolution: Awaited<ReturnType<ContextBuilder['resolveRoleProvider']>> = roleSnapshot
+      ? {
+          providerKey: roleSnapshot.providerKey,
+          agentId: roleSnapshot.agentId,
+          model: roleSnapshot.model,
+        }
+      : await contextBuilder.resolveRoleProvider(task.projectId, input.role);
     const providerRow = await prisma.agentProvider.findFirst({
       where: {
         organizationId: task.project.organizationId,
         key: resolution.providerKey,
         enabled: true,
+        ...(roleSnapshot ? { id: roleSnapshot.providerId, kind: roleSnapshot.providerKind } : {}),
       },
       select: { id: true },
     });
@@ -95,6 +129,13 @@ export class AgentExecutor {
       );
     }
 
+    let currentAgent: {
+      timeoutMs: number;
+      maxTokens: number;
+      maxCostUsd: { toString(): string };
+      allowedCommands: string[];
+      permissionLevel: typeof task.project.permissionLevel;
+    } | null = null;
     if (resolution.agentId) {
       const resolvedAgent = await prisma.agent.findFirst({
         where: {
@@ -104,8 +145,18 @@ export class AgentExecutor {
           role: input.role,
           providerId: providerRow.id,
           OR: [{ projectId: null }, { projectId: task.projectId }],
+          ...(roleSnapshot && task.project.teamConfigured
+            ? { teamMemberships: { some: { projectId: task.projectId } } }
+            : {}),
         },
-        select: { id: true },
+        select: {
+          id: true,
+          timeoutMs: true,
+          maxTokens: true,
+          maxCostUsd: true,
+          allowedCommands: true,
+          permissionLevel: true,
+        },
       });
       if (!resolvedAgent) {
         throw new ProviderUnavailableError(
@@ -113,9 +164,10 @@ export class AgentExecutor {
           'resolved agent is not enabled for this organization, project, role, and provider',
         );
       }
+      currentAgent = resolvedAgent;
     }
 
-    const budget = await usage.budgetExceeded(input.taskId);
+    const budget = await usage.budgetExceeded(input.taskId, snapshot?.project.costBudgetUsd);
     if (budget.exceeded) {
       logger.warn({ taskId: input.taskId, ...budget }, 'agent.budget_exceeded');
       const run = await prisma.$transaction(async (tx) => {
@@ -267,7 +319,11 @@ export class AgentExecutor {
         fallbackProviderKey: resolution.providerKey,
       });
       actualProviderKey = provider.key;
-      actualModel = provider.capabilities.models[0] ?? resolution.model;
+      if (roleSnapshot && provider.kind !== roleSnapshot.providerKind)
+        throw new Error('Registered provider kind differs from execution snapshot');
+      actualModel = roleSnapshot
+        ? roleSnapshot.model
+        : (provider.capabilities.models[0] ?? resolution.model);
 
       const context = await contextBuilder.build({
         runId: agentRun.id,
@@ -287,7 +343,62 @@ export class AgentExecutor {
             ? { maxCostUsd: resolution.agentMaxCostUsd }
             : {}),
         },
+        ...(snapshot && roleSnapshot
+          ? {
+              snapshot,
+              roleSnapshot,
+              budgetOverrides: {
+                timeoutMs: Math.min(
+                  roleSnapshot.budget.timeoutMs,
+                  this.deps.env.AGENT_RUN_TIMEOUT_MS,
+                  currentAgent?.timeoutMs ?? Infinity,
+                ),
+                maxTokens: Math.min(
+                  roleSnapshot.budget.maxTokens,
+                  this.deps.env.AGENT_TOKEN_BUDGET,
+                  currentAgent?.maxTokens ?? Infinity,
+                ),
+                maxCostUsd: Math.min(
+                  roleSnapshot.budget.maxCostUsd,
+                  this.deps.env.AGENT_COST_BUDGET_USD,
+                  currentAgent ? Number(currentAgent.maxCostUsd) : Infinity,
+                  budget.limit > 0 ? Math.max(0, budget.limit - budget.spent) : Infinity,
+                ),
+                allowedCommands: roleSnapshot.budget.allowedCommands.filter(
+                  (command) =>
+                    this.deps.env.COMMAND_ALLOWLIST.includes(command) &&
+                    (!currentAgent?.allowedCommands.length ||
+                      currentAgent.allowedCommands.includes(command)),
+                ),
+              },
+            }
+          : {}),
       });
+      if (roleSnapshot) {
+        if (
+          provider.kind === 'CODEX' &&
+          this.deps.env.COMMAND_ALLOWLIST.some(
+            (command) => !context.budget.allowedCommands.includes(command),
+          )
+        ) {
+          throw new ProviderUnavailableError(
+            provider.key,
+            'Codex cannot enforce a narrowed snapshot command allowlist',
+          );
+        }
+        context.project.permissionLevel = narrowPermission(
+          roleSnapshot.permissionLevel,
+          task.project.permissionLevel,
+          currentAgent?.permissionLevel ?? roleSnapshot.permissionLevel,
+        );
+        // Persist the complete invocation before any provider or credential access.
+        const persisted = await prisma.agentRun.updateMany({
+          where: { id: agentRun.id, status: AgentRunStatus.RUNNING },
+          data: { executionSnapshot: { version: 1, context } as Prisma.InputJsonValue },
+        });
+        if (persisted.count !== 1)
+          throw new Error('Agent run was cancelled before snapshot persistence');
+      }
 
       // Task input and repository guidance are untrusted. Scan them before any
       // credential is decrypted; a HIGH finding fails the run closed.
@@ -582,7 +693,8 @@ export class AgentExecutor {
   private async assertWorkflowOwnership(
     input: ExecuteAgentInput,
     projectId: string,
-  ): Promise<void> {
+    organizationId: string,
+  ): Promise<WorkflowExecutionSnapshot | undefined> {
     const { prisma } = this.deps;
     let workflowRunId = input.workflowRunId;
 
@@ -608,11 +720,17 @@ export class AgentExecutor {
     if (workflowRunId) {
       const run = await prisma.workflowRun.findUnique({
         where: { id: workflowRunId },
-        select: { projectId: true, taskId: true },
+        select: { projectId: true, taskId: true, executionSnapshot: true },
       });
       if (!run || run.projectId !== projectId || run.taskId !== input.taskId) {
         throw new Error('Workflow run does not belong to the input task and project');
       }
+      return readExecutionSnapshot(run.executionSnapshot, {
+        taskId: input.taskId,
+        projectId,
+        organizationId,
+      });
     }
+    return undefined;
   }
 }

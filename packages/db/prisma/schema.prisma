@@ -978,6 +978,7 @@ model AgentConfiguration {
 }
 
 model AgentRun {
+  executionSnapshot Json?
   id             String         @id @default(cuid())
   taskId         String?
   workflowRunId  String?
@@ -1070,6 +1071,7 @@ model WorkflowDefinition {
 }
 
 model WorkflowRun {
+  executionSnapshot Json?
   id             String    @id @default(cuid())
   definitionId   String?
   definitionKey  String

@@ -1,6 +1,10 @@
 import { AuditAction, type CheckType } from '@engloop/types';
 import { retryOnUniqueViolation, type Prisma, type PrismaClient } from '@engloop/db';
-import { plannerOutputSchema, type PlannerOutput } from '@engloop/schemas';
+import {
+  plannerOutputSchema,
+  type PlannerOutput,
+  type WorkflowExecutionSnapshot,
+} from '@engloop/schemas';
 import { assertPlannerPhaseScope, loadPlannerPhaseContext } from './planner-phase-scope';
 
 /**
@@ -16,6 +20,7 @@ export class PlanMaterializer {
   async materialize(
     parentTaskId: string,
     plan: PlannerOutput,
+    snapshot?: WorkflowExecutionSnapshot,
   ): Promise<{ createdTaskIds: string[] }> {
     // Other callers can pass typed values without the agent-output parsing boundary.
     plan = plannerOutputSchema.parse(plan);
@@ -32,6 +37,12 @@ export class PlanMaterializer {
         await tx.$queryRaw`SELECT id FROM projects WHERE id = ${parent.projectId} FOR NO KEY UPDATE`;
         await tx.$queryRaw`SELECT id FROM tasks WHERE id = ${parentTaskId} FOR UPDATE`;
         const currentParent = await tx.task.findUniqueOrThrow({ where: { id: parentTaskId } });
+        if (
+          snapshot &&
+          (currentParent.phaseId !== snapshot.task.phaseId ||
+            currentParent.repositoryId !== (snapshot.repository?.id ?? null))
+        )
+          throw new Error('Parent phase or repository changed after execution snapshot');
         if (currentParent.projectId !== parent.projectId)
           throw new Error('Parent project changed during plan materialization');
         const phaseContext = await loadPlannerPhaseContext(tx, currentParent);
@@ -82,7 +93,7 @@ export class PlanMaterializer {
               implementationNotes: planned.implementationNotes,
               suggestedFiles: planned.suggestedFiles,
               requiredChecks: planned.requiredChecks as CheckType[],
-              maxAttempts: currentParent.maxAttempts,
+              maxAttempts: snapshot?.task.maxAttempts ?? currentParent.maxAttempts,
               createdById: currentParent.createdById,
             },
           });

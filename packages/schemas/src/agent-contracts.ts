@@ -93,6 +93,18 @@ export const agentTaskContextSchema = z.object({
   branchName: branchNameSchema.nullable().optional(),
   /** Role-specific payload — one of the *InputSchema shapes below. */
   input: z.unknown(),
+  execution: z
+    .object({
+      model: z.string().min(1).nullable(),
+      systemPrompt: z.string().nullable(),
+      prompt: z
+        .object({ templateId: cuidLike, revision: z.number().int().positive(), body: z.string() })
+        .strict()
+        .optional(),
+      outputContractVersion: z.literal(1),
+    })
+    .strict()
+    .optional(),
   correlation: z
     .object({
       traceId: z.string(),
