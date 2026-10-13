@@ -8,16 +8,24 @@ import { ProjectPhasesService } from './project-phases.service';
 import { ProjectContractController } from './project-contract.controller';
 import { ProjectContractService } from './project-contract.service';
 import { ProjectPhaseDependenciesService } from './project-phase-dependencies.service';
+import { ProjectTeamController } from './project-team.controller';
+import { ProjectTeamService } from './project-team.service';
 
 @Module({
   imports: [TasksModule],
-  controllers: [ProjectsController, ProjectPhasesController, ProjectContractController],
+  controllers: [
+    ProjectsController,
+    ProjectPhasesController,
+    ProjectContractController,
+    ProjectTeamController,
+  ],
   providers: [
     ProjectsService,
     ProjectPhasesService,
     ProjectPhaseLifecycleService,
     ProjectContractService,
     ProjectPhaseDependenciesService,
+    ProjectTeamService,
   ],
   exports: [ProjectsService],
 })

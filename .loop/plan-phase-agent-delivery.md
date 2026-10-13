@@ -6,7 +6,9 @@ protections implemented and reviewed. Current checkout gate evidence is in
 [graph evidence](cp-01c-evidence.md) and
 [lifecycle evidence](cp-01c-lifecycle-evidence.md). CP-01D bounded active-phase
 planning is implemented and reviewed; see [planner evidence](cp-01d-evidence.md).
-CP-02A team membership and role coverage is next.
+CP-02A team membership, role coverage and the project editor are implemented;
+browser acceptance and independent review remain open. See
+[team evidence](cp-02a-evidence.md). CP-02B prompt revisions are the next implementation slice.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -88,6 +90,11 @@ Dependencies: CP-01.
 
 - [ ] CP-02A: Reuse Agent/AgentConfiguration; define team membership and required
   role coverage without assuming role names imply permissions.
+  Implementation adds opt-in explicit project rosters, versioned replacement,
+  project/phase coverage, tenant/provider eligibility checks, deterministic worker
+  selection and a responsive project editor. Missing configured roles fail closed;
+  unconfigured projects keep legacy selection. The checkbox remains open for
+  browser acceptance and independent review. See [team evidence](cp-02a-evidence.md).
 - [ ] CP-02B: Add prompt templates/revisions with supported variables, input context
   and output contracts. Reject unresolved variables and invalid outputs.
 - [ ] CP-02C: Snapshot task, prompt, effective agent/provider settings, budgets,

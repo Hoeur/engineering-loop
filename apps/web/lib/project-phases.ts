@@ -5,6 +5,7 @@ import type { ProjectPhaseDetail, ProjectPhaseSummary } from '@engloop/types';
 import type { CreateProjectPhaseDto } from '@engloop/schemas';
 import { api, apiFetch } from './api-client';
 import { queryKeys } from './queries';
+import { teamKey } from './project-team';
 
 export const phaseKeys = {
   project: (projectId: string) => ['project-phases', projectId] as const,
@@ -82,6 +83,7 @@ export const usePhaseChange = (projectId: string) => {
         client.invalidateQueries({ queryKey: queryKeys.board(projectId) }),
         client.invalidateQueries({ queryKey: ['tasks'] }),
         client.invalidateQueries({ queryKey: queryKeys.project(projectId) }),
+        client.invalidateQueries({ queryKey: teamKey(projectId) }),
       ]);
     },
   });

@@ -491,6 +491,9 @@ model Project {
   costBudgetUsd   Decimal         @default(50) @db.Decimal(12, 4)
   /// Role -> agent-provider key overrides for this project.
   roleAssignments Json            @default("{}")
+  teamRequiredRoles AgentRole[]   @default([])
+  teamConfigured Boolean         @default(false)
+  teamVersion Int                @default(0)
   settings        Json            @default("{}")
   taskSequence    Int             @default(100)
   createdAt       DateTime        @default(now())
@@ -504,6 +507,7 @@ model Project {
   tasks        Task[]
   phases       ProjectPhase[]
   agents       Agent[]
+  teamMembers  ProjectTeamMember[]
   schedules    Schedule[]
   memories     ProjectMemory[]
   decisions    ArchitectureDecision[]
@@ -908,11 +912,26 @@ model Agent {
   configurations AgentConfiguration[]
   runs           AgentRun[]
   tasks          Task[]
+  teamMemberships ProjectTeamMember[]
 
   @@unique([organizationId, projectId, role, name])
   @@index([organizationId, role])
   @@index([projectId, role])
   @@map("agents")
+}
+
+/// Explicit planning membership; Agent.role is a responsibility, not a permission.
+model ProjectTeamMember {
+  projectId String
+  agentId   String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agent   Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, agentId])
+  @@index([agentId])
+  @@map("project_team_members")
 }
 
 model AgentConfiguration {
