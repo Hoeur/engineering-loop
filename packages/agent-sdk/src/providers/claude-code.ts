@@ -120,14 +120,22 @@ export const claudeImplementerCommandRules = (packageManager?: string | null): s
  * Explicit rules also override whatever the operator's own Claude settings allow.
  */
 export const claudePermissionArgs = (
-  context: Pick<AgentTaskContext, 'role' | 'repository'>,
+  context: Pick<AgentTaskContext, 'role' | 'repository'> &
+    Partial<Pick<AgentTaskContext, 'execution' | 'project' | 'budget'>>,
 ): string[] =>
-  IMPLEMENTATION_ROLES.has(context.role)
+  IMPLEMENTATION_ROLES.has(context.role) &&
+  (!context.execution ||
+    (context.project?.permissionLevel !== 'LEVEL_0_OBSERVE' &&
+      context.project?.permissionLevel !== 'LEVEL_1_PLAN'))
     ? [
         '--permission-mode',
         'acceptEdits',
         '--allowedTools',
-        ...claudeImplementerCommandRules(context.repository.packageManager),
+        ...claudeImplementerCommandRules(context.repository.packageManager).filter(
+          (rule) =>
+            !context.execution ||
+            context.budget?.allowedCommands.includes(rule.slice(5).split(' ')[0]!),
+        ),
       ]
     : ['--disallowedTools', ...MUTATING_TOOLS];
 
@@ -141,7 +149,7 @@ export class ClaudeCodeAgentProvider extends CliCodingAgentProvider {
       buildArgs: (context, _schemaFile, _outputFile, schemaJson) => [
         '-p',
         '--model',
-        options.model,
+        context.execution?.model ?? options.model,
         ...claudePermissionArgs(context),
         '--output-format',
         'json',
@@ -153,7 +161,7 @@ export class ClaudeCodeAgentProvider extends CliCodingAgentProvider {
         '--resume',
         sessionId,
         '--model',
-        options.model,
+        context.execution?.model ?? options.model,
         ...claudePermissionArgs(context),
         '--output-format',
         'json',

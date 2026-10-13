@@ -221,10 +221,17 @@ export const summarize = (findings: readonly InjectionFinding[]): InjectionScanR
  * operators through the API and are not scanned.
  */
 export const scanAgentContext = (
-  context: Pick<AgentTaskContext, 'input'> & Partial<Pick<AgentTaskContext, 'guidance'>>,
+  context: Pick<AgentTaskContext, 'input'> &
+    Partial<Pick<AgentTaskContext, 'guidance' | 'execution'>>,
 ): InjectionScanResult => {
   const sources: Array<[string, string]> = [];
   collectStrings(context.input, 'input', sources);
+  if (context.execution?.systemPrompt) {
+    sources.push(['execution.systemPrompt', context.execution.systemPrompt]);
+  }
+  if (context.execution?.prompt) {
+    sources.push(['execution.prompt.body', context.execution.prompt.body]);
+  }
   for (const [file, content] of Object.entries(context.guidance?.files ?? {})) {
     sources.push([`guidance.${file}`, content]);
   }

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   ApiErrorCode,
@@ -21,6 +21,7 @@ import type {
   PlanTaskDto,
   RunTaskDto,
   UpdateTaskDto,
+  ExecutionSelection,
 } from '@engloop/schemas';
 import {
   isPrismaError,
@@ -47,6 +48,7 @@ import { AuditService } from '../audit/audit.service';
 import { TaskTransitionService } from './task-transition.service';
 import { AgentRunsService } from '../agent-runs/agent-runs.service';
 import { TaskDependenciesService } from './task-dependencies.service';
+import { ExecutionSnapshotsService } from './execution-snapshots.service';
 
 const TASK_LIST_INCLUDE = {
   project: { select: { id: true, name: true, key: true, slug: true } },
@@ -89,6 +91,8 @@ export class TasksService {
       prisma,
       audit,
     ),
+    @Optional()
+    private readonly snapshots: ExecutionSnapshotsService = new ExecutionSnapshotsService(),
   ) {}
 
   // -------------------------------------------------------------------------
@@ -523,6 +527,7 @@ export class TasksService {
       requirement: dto.requirement ?? task.description,
       constraints: dto.constraints,
       targetPaths: dto.targetPaths,
+      execution: dto.execution,
     });
   }
 
@@ -532,6 +537,7 @@ export class TasksService {
       skipPlanning: dto.skipPlanning,
       force: dto.force,
       planOnly: false,
+      execution: dto.execution,
     });
   }
 
@@ -546,84 +552,131 @@ export class TasksService {
       requirement?: string;
       constraints?: string[];
       targetPaths?: string[];
+      execution?: ExecutionSelection;
     },
   ) {
+    if (options.execution && options.workflowKey !== ENGINEERING_TASK_WORKFLOW.key)
+      throw AppError.validation(
+        'Execution snapshots currently support only engineering-task workflows',
+      );
     // Lock the owned task row so concurrent API requests serialize the active-run
     // check and create. Force still permits an additional run after the lock.
-    const { task, run, key } = await this.prisma.$transaction(async (tx) => {
-      const owned = await tx.$queryRaw<Array<{ id: string }>>`
+    const { task, run, key } = await this.prisma
+      .$transaction(
+        async (tx) => {
+          if (options.execution) {
+            // Roster and phase edits lock the project before tasks; preserve that order.
+            const projectLock = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT p.id FROM projects p JOIN tasks t ON t."projectId" = p.id
+          WHERE t.id = ${taskId} AND p."organizationId" = ${organizationId}
+          FOR UPDATE OF p
+        `;
+            if (projectLock.length !== 1) throw AppError.notFound('Task', taskId);
+          }
+          const owned = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT t.id FROM tasks t
         JOIN projects p ON p.id = t."projectId"
         WHERE t.id = ${taskId} AND p."organizationId" = ${organizationId}
         FOR UPDATE OF t
       `;
-      if (owned.length !== 1) throw AppError.notFound('Task', taskId);
+          if (owned.length !== 1) throw AppError.notFound('Task', taskId);
 
-      const task = await tx.task.findFirst({
-        where: { id: taskId, project: { organizationId } },
-        include: {
-          project: {
-            select: {
-              id: true,
-              organizationId: true,
-              maxReviewCycles: true,
-              maxTaskAttempts: true,
-              permissionLevel: true,
+          const task = await tx.task.findFirst({
+            where: { id: taskId, project: { organizationId } },
+            include: {
+              project: {
+                select: {
+                  id: true,
+                  organizationId: true,
+                  maxReviewCycles: true,
+                  maxTaskAttempts: true,
+                  permissionLevel: true,
+                },
+              },
             },
-          },
-        },
-      });
-      if (!task) throw AppError.notFound('Task', taskId);
-      if (task.status === TaskStatus.CANCELLED || task.status === TaskStatus.COMPLETED) {
-        throw AppError.conflict(
-          ApiErrorCode.TASK_INVALID_TRANSITION,
-          `${task.key} cannot start a workflow from ${task.status}`,
-        );
-      }
+          });
+          if (!task) throw AppError.notFound('Task', taskId);
+          if (task.status === TaskStatus.CANCELLED || task.status === TaskStatus.COMPLETED) {
+            throw AppError.conflict(
+              ApiErrorCode.TASK_INVALID_TRANSITION,
+              `${task.key} cannot start a workflow from ${task.status}`,
+            );
+          }
 
-      const active = await tx.workflowRun.findFirst({
-        where: { taskId, status: { in: [RunStatus.PENDING, RunStatus.RUNNING] } },
-      });
-      if (active && !options.force) {
-        throw AppError.conflict(
-          ApiErrorCode.TASK_ALREADY_RUNNING,
-          `${task.key} already has a workflow run in progress`,
-          { workflowRunId: active.id },
-        );
-      }
-      if (task.attemptCount >= task.maxAttempts && !options.force) {
-        throw AppError.conflict(
-          ApiErrorCode.TASK_MAX_ATTEMPTS_REACHED,
-          `${task.key} has used all ${String(task.maxAttempts)} attempts; approve a retry to continue`,
-        );
-      }
+          const active = await tx.workflowRun.findFirst({
+            where: { taskId, status: { in: [RunStatus.PENDING, RunStatus.RUNNING] } },
+          });
+          if (active && !options.force) {
+            throw AppError.conflict(
+              ApiErrorCode.TASK_ALREADY_RUNNING,
+              `${task.key} already has a workflow run in progress`,
+              { workflowRunId: active.id },
+            );
+          }
+          if (task.attemptCount >= task.maxAttempts && !options.force) {
+            throw AppError.conflict(
+              ApiErrorCode.TASK_MAX_ATTEMPTS_REACHED,
+              `${task.key} has used all ${String(task.maxAttempts)} attempts; approve a retry to continue`,
+            );
+          }
 
-      const state = createInitialWorkflowState({
-        maxReviewCycles: task.project.maxReviewCycles,
-        maxAttempts: task.maxAttempts,
-        skipPlanning: options.skipPlanning,
-        createPullRequest: !options.planOnly,
-        permissionLevel: task.project.permissionLevel,
-      });
-      const key = idempotencyKey('wf', taskId, task.attemptCount, randomUUID());
-      const run = await tx.workflowRun.create({
-        data: {
-          definitionKey: options.workflowKey,
-          projectId: task.projectId,
-          taskId: task.id,
-          status: RunStatus.PENDING,
-          state: {
-            ...state,
-            planOnly: options.planOnly,
-            requirement: options.requirement ?? task.description,
-            constraints: options.constraints ?? [],
-            targetPaths: options.targetPaths ?? [],
-          },
-          idempotencyKey: key,
+          const state = createInitialWorkflowState({
+            maxReviewCycles: task.project.maxReviewCycles,
+            maxAttempts: task.maxAttempts,
+            skipPlanning: options.skipPlanning,
+            createPullRequest: !options.planOnly,
+            permissionLevel: task.project.permissionLevel,
+          });
+          const key = idempotencyKey('wf', taskId, task.attemptCount, randomUUID());
+          const executionSnapshot = options.execution
+            ? await this.snapshots.capture(tx, organizationId, taskId, options.execution, options)
+            : undefined;
+          const run = await tx.workflowRun.create({
+            data: {
+              definitionKey: options.workflowKey,
+              projectId: task.projectId,
+              taskId: task.id,
+              status: RunStatus.PENDING,
+              state: {
+                ...state,
+                planOnly: options.planOnly,
+                requirement: options.requirement ?? task.description,
+                constraints: options.constraints ?? [],
+                targetPaths: options.targetPaths ?? [],
+              },
+              idempotencyKey: key,
+              ...(executionSnapshot
+                ? { executionSnapshot: executionSnapshot as Prisma.InputJsonValue }
+                : {}),
+            },
+          });
+          if (executionSnapshot) {
+            await this.audit.recordInTransaction(tx, {
+              organizationId,
+              projectId: task.projectId,
+              taskId: task.id,
+              action: AuditAction.CONFIGURATION_CHANGED,
+              entityType: 'WorkflowExecutionSnapshot',
+              entityId: run.id,
+              summary: 'Captured immutable workflow execution inputs',
+              metadata: {
+                version: executionSnapshot.version,
+                roleCount: executionSnapshot.roles.length,
+              },
+            });
+          }
+          return { task, run, key };
         },
+        options.execution ? { isolationLevel: 'Serializable' } : undefined,
+      )
+      .catch((error: unknown) => {
+        if (options.execution && isPrismaError(error, 'P2034'))
+          throw AppError.conflict(
+            ApiErrorCode.WORKFLOW_SNAPSHOT_CONFLICT,
+            'Execution inputs changed concurrently; retry starting the workflow',
+          );
+        throw error;
       });
-      return { task, run, key };
-    });
 
     try {
       await this.orchestrator.start({

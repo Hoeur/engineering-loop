@@ -80,6 +80,44 @@ const fakeRunner = (
   }) as AgentCommandExecutor;
 
 describe('CodexAgentProvider', () => {
+  it('pins model, prompt and policy across start and resume transport', async () => {
+    const workspacePath = await makeTemporaryDirectory();
+    const runner = fakeRunner(async (input) => {
+      await writeFile(
+        input.args[input.args.indexOf('--output-last-message') + 1]!,
+        JSON.stringify(validPlan),
+      );
+      return commandResult(input, '');
+    });
+    const provider = new CodexAgentProvider({
+      cliPath: 'codex',
+      model: 'edited-default',
+      executor: runner,
+    });
+    const context = makeAgentTaskContext({
+      role: AgentRole.PLANNER,
+      workspacePath,
+      execution: {
+        model: 'pinned-model',
+        systemPrompt: 'Bounded task instructions',
+        outputContractVersion: 1,
+        prompt: { templateId: 'prompt-1', revision: 2, body: 'Pinned prompt body' },
+      },
+    });
+    await provider.startRun(context);
+    await provider.resumeRun('session-1', {
+      ...context,
+      previousRunId: 'prior-run',
+      reason: 'Retry',
+    });
+    for (const [input] of vi.mocked(runner.run).mock.calls) {
+      expect(input.args[input.args.indexOf('--model') + 1]).toBe('pinned-model');
+      expect(input.args[input.args.indexOf('--sandbox') + 1]).toBe('read-only');
+      const request = JSON.parse(input.stdin ?? '{}') as Record<string, unknown>;
+      expect(request['execution']).toEqual(context.execution);
+      expect(request['budget']).toEqual(context.budget);
+    }
+  });
   it('communicates phase bounds and retains scope through CLI output parsing', async () => {
     const workspacePath = await makeTemporaryDirectory();
     const scope = {
@@ -340,6 +378,45 @@ describe('CodexAgentProvider', () => {
 });
 
 describe('ClaudeCodeAgentProvider', () => {
+  it('pins the model on start/resume and narrows snapshot command tools', async () => {
+    const workspacePath = await makeTemporaryDirectory();
+    const runner = fakeRunner(async (input) =>
+      commandResult(input, JSON.stringify({ type: 'result', structured_output: validPlan })),
+    );
+    const provider = new ClaudeCodeAgentProvider({
+      cliPath: 'claude',
+      model: 'edited-default',
+      executor: runner,
+    });
+    const context = makeAgentTaskContext({
+      role: AgentRole.PLANNER,
+      workspacePath,
+      execution: { model: 'pinned-model', systemPrompt: null, outputContractVersion: 1 },
+    });
+    await provider.startRun(context);
+    await provider.resumeRun('session-1', {
+      ...context,
+      previousRunId: 'prior-run',
+      reason: 'Retry',
+    });
+    for (const [input] of vi.mocked(runner.run).mock.calls) {
+      expect(input.args[input.args.indexOf('--model') + 1]).toBe('pinned-model');
+      expect((JSON.parse(input.stdin ?? '{}') as Record<string, unknown>)['execution']).toEqual(
+        context.execution,
+      );
+    }
+    const restricted = makeAgentTaskContext({
+      role: AgentRole.IMPLEMENTER,
+      execution: context.execution,
+      budget: { ...context.budget, allowedCommands: ['git'] },
+    });
+    const { claudePermissionArgs } = await import('../src/providers/claude-code');
+    expect(claudePermissionArgs(restricted)).toContain('Bash(git status:*)');
+    expect(claudePermissionArgs(restricted)).not.toContain('Bash(pnpm test:*)');
+    restricted.project.permissionLevel = 'LEVEL_1_PLAN';
+    expect(claudePermissionArgs(restricted)).toContain('--disallowedTools');
+    expect(claudePermissionArgs(restricted)).not.toContain('--permission-mode');
+  });
   it('scopes resumed CLI execution to the continuation run id', async () => {
     const workspacePath = await makeTemporaryDirectory();
     const runner = fakeRunner(async (input) =>

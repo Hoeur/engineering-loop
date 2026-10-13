@@ -8,6 +8,7 @@ import {
 } from './check-defaults';
 import { reviewOutputSchema, parseSafely } from '@engloop/schemas';
 import type { StepHandler } from './types';
+import { readExecutionSnapshot } from '../../services/execution-snapshot';
 
 /**
  * RUN_TESTS / RETEST — the system's own verification pass.
@@ -17,6 +18,14 @@ import type { StepHandler } from './types';
  */
 const runChecks: StepHandler = async (context) => {
   const { worker, task, state, traceId, run, step } = context;
+  const snapshot =
+    run.executionSnapshot == null
+      ? undefined
+      : readExecutionSnapshot(run.executionSnapshot, {
+          taskId: task.id,
+          projectId: task.projectId,
+          organizationId: task.project.organizationId,
+        });
 
   const workspacePath = state.worktreePath ?? task.worktreePath;
   const checks: CheckType[] =
@@ -44,6 +53,7 @@ const runChecks: StepHandler = async (context) => {
     traceId,
     workflowRunId: run.id,
     workflowStepId: step.id,
+    ...(snapshot ? { commandsOverride: snapshot.repository?.commands ?? {} } : {}),
   });
 
   return {

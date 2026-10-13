@@ -5,6 +5,11 @@ import type { WorkerContext } from '../context';
 import { TaskTransitions } from '../services/task-transitions';
 import { STEP_HANDLERS, type StepExecutionContext, type StepOutcome } from './steps';
 import { CYCLE_STEPS, guardDecision, readState, type PersistedWorkflowState } from './state';
+import {
+  narrowPermission,
+  plannedSnapshotContract,
+  readExecutionSnapshot,
+} from '../services/execution-snapshot';
 
 /** A workflow run loaded with its step rows — what every engine method works on. */
 type LoadedRun = WorkflowRun & { steps: WorkflowStep[] };
@@ -112,7 +117,7 @@ export class WorkflowEngine {
       };
     }
 
-    const task = await prisma.task.findUnique({
+    let task = await prisma.task.findUnique({
       where: { id: run.taskId },
       include: {
         repository: true,
@@ -154,6 +159,59 @@ export class WorkflowEngine {
       };
     }
 
+    let snapshot;
+    let plannedContract;
+    try {
+      snapshot = readExecutionSnapshot(run.executionSnapshot, {
+        taskId: task.id,
+        projectId: run.projectId,
+        organizationId: task.project.organizationId,
+      });
+      plannedContract = snapshot ? plannedSnapshotContract(snapshot, run.steps) : undefined;
+    } catch {
+      const reason = 'Workflow execution snapshot is invalid';
+      if (!(await this.finishRun(run.id, RunStatus.FAILED, reason)))
+        return this.staleResult(run.id);
+      return {
+        workflowRunId,
+        decision: 'FAIL',
+        status: RunStatus.FAILED,
+        reason,
+        shouldContinue: false,
+      };
+    }
+    if (snapshot) {
+      if (task.repository?.id !== snapshot.repository?.id) {
+        const reason = 'Task repository changed after execution snapshot';
+        if (!(await this.finishRun(run.id, RunStatus.FAILED, reason)))
+          return this.staleResult(run.id);
+        return {
+          workflowRunId,
+          decision: 'FAIL',
+          status: RunStatus.FAILED,
+          reason,
+          shouldContinue: false,
+        };
+      }
+      task = {
+        ...task,
+        ...snapshot.task,
+        ...plannedContract,
+        updatedAt: new Date(snapshot.task.updatedAt),
+        project: {
+          ...task.project,
+          maxReviewCycles: snapshot.project.maxReviewCycles,
+          permissionLevel: narrowPermission(
+            snapshot.project.permissionLevel,
+            task.project.permissionLevel,
+          ),
+        },
+        repository:
+          task.repository && snapshot.repository
+            ? { ...task.repository, ...snapshot.repository }
+            : null,
+      };
+    }
     const state: PersistedWorkflowState = {
       ...readState(run),
       maxReviewCycles: task.project.maxReviewCycles,
@@ -161,8 +219,9 @@ export class WorkflowEngine {
       permissionLevel: task.project.permissionLevel,
       // Resolved here, in the engine, so the router keeps seeing a plain boolean
       // and stays a pure function of its state.
-      uiQaEnabled: isUiQaEnabled(task.project.settings),
-      documentationEnabled: isDocumentationEnabled(task.project.settings),
+      uiQaEnabled: snapshot?.project.uiQaEnabled ?? isUiQaEnabled(task.project.settings),
+      documentationEnabled:
+        snapshot?.project.documentationEnabled ?? isDocumentationEnabled(task.project.settings),
     };
 
     const definition = getWorkflowDefinition(run.definitionKey);
@@ -195,9 +254,16 @@ export class WorkflowEngine {
 
     switch (decision.type) {
       case 'COMPLETE':
-        if (!(await this.transitions.finishWorkflow(
-          run.id, task.id, RunStatus.SUCCEEDED, TaskStatus.COMPLETED, decision.reason, traceId,
-        ))) {
+        if (
+          !(await this.transitions.finishWorkflow(
+            run.id,
+            task.id,
+            RunStatus.SUCCEEDED,
+            TaskStatus.COMPLETED,
+            decision.reason,
+            traceId,
+          ))
+        ) {
           return this.staleResult(run.id);
         }
         await this.worker.gitManager.releaseWorktree(task.id).catch(() => undefined);
@@ -211,9 +277,16 @@ export class WorkflowEngine {
         };
 
       case 'FAIL':
-        if (!(await this.transitions.finishWorkflow(
-          run.id, task.id, RunStatus.FAILED, TaskStatus.FAILED, decision.reason, traceId,
-        ))) {
+        if (
+          !(await this.transitions.finishWorkflow(
+            run.id,
+            task.id,
+            RunStatus.FAILED,
+            TaskStatus.FAILED,
+            decision.reason,
+            traceId,
+          ))
+        ) {
           return this.staleResult(run.id);
         }
         return {
@@ -225,10 +298,16 @@ export class WorkflowEngine {
         };
 
       case 'WAIT_FOR_HUMAN':
-        if (!(await this.transitions.finishWorkflow(
-          run.id, task.id, RunStatus.WAITING_FOR_HUMAN,
-          TaskStatus.NEEDS_HUMAN_REVIEW, decision.reason, traceId,
-        ))) {
+        if (
+          !(await this.transitions.finishWorkflow(
+            run.id,
+            task.id,
+            RunStatus.WAITING_FOR_HUMAN,
+            TaskStatus.NEEDS_HUMAN_REVIEW,
+            decision.reason,
+            traceId,
+          ))
+        ) {
           return this.staleResult(run.id);
         }
         await this.requestApproval(task.id, task.projectId, decision.reason);
@@ -269,11 +348,12 @@ export class WorkflowEngine {
     const definitionStep = decision.step;
 
     const currentStepKey = run.currentStepKey ?? null;
-    const abandonedStep = currentStepKey === definitionStep.key
-      ? [...run.steps].reverse().find(
-          (row) => row.stepKey === definitionStep.key && row.status === RunStatus.RUNNING,
-        )
-      : undefined;
+    const abandonedStep =
+      currentStepKey === definitionStep.key
+        ? [...run.steps]
+            .reverse()
+            .find((row) => row.stepKey === definitionStep.key && row.status === RunStatus.RUNNING)
+        : undefined;
     if (currentStepKey !== null) {
       const leaseAge = Date.now() - run.updatedAt.getTime();
       if (!abandonedStep || leaseAge < STEP_LEASE_MS) return this.staleResult(run.id);
@@ -282,13 +362,13 @@ export class WorkflowEngine {
     // Cycle steps get a fresh row each cycle. A one-shot retry, or a step whose
     // worker died after claiming it, reuses the observed row with a new attempt
     // token so the old execution can no longer heartbeat or persist a result.
-    const reusable = abandonedStep ?? (
-      !CYCLE_STEPS.includes(definitionStep.key)
+    const reusable =
+      abandonedStep ??
+      (!CYCLE_STEPS.includes(definitionStep.key)
         ? run.steps.find(
             (row) => row.stepKey === definitionStep.key && row.status !== RunStatus.SUCCEEDED,
           )
-        : undefined
-    );
+        : undefined);
 
     const staleClaim = new Error('STALE_WORKFLOW_STEP_CLAIM');
     let step: WorkflowStep | null;
@@ -360,12 +440,16 @@ export class WorkflowEngine {
       if (heartbeat) return;
       heartbeat = this.heartbeatStepClaim(run.id, definitionStep.key, step)
         .catch((error) => {
-          logger.withContext({ traceId, workflowRunId: run.id }).warn(
-            { error: String(error), step: definitionStep.key },
-            'workflow.step.heartbeat_failed',
-          );
+          logger
+            .withContext({ traceId, workflowRunId: run.id })
+            .warn(
+              { error: String(error), step: definitionStep.key },
+              'workflow.step.heartbeat_failed',
+            );
         })
-        .finally(() => { heartbeat = null; });
+        .finally(() => {
+          heartbeat = null;
+        });
     }, STEP_HEARTBEAT_MS);
     try {
       if (!handler) {
@@ -546,7 +630,10 @@ export class WorkflowEngine {
 
   private async finishRun(id: string, status: RunStatus, reason: string): Promise<boolean> {
     const claimed = await this.worker.prisma.workflowRun.updateMany({
-      where: { id, status: { in: [RunStatus.PENDING, RunStatus.RUNNING, RunStatus.WAITING_FOR_HUMAN] } },
+      where: {
+        id,
+        status: { in: [RunStatus.PENDING, RunStatus.RUNNING, RunStatus.WAITING_FOR_HUMAN] },
+      },
       data: {
         status,
         error: status === RunStatus.SUCCEEDED ? null : reason,
@@ -602,7 +689,8 @@ export class WorkflowEngine {
       run.status !== RunStatus.PENDING &&
       run.status !== RunStatus.RUNNING &&
       run.status !== RunStatus.WAITING_FOR_HUMAN
-    ) return;
+    )
+      return;
 
     const claimed = await this.worker.prisma.workflowRun.updateMany({
       where: {
