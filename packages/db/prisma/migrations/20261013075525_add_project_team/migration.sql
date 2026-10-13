@@ -1,11 +1,11 @@
 -- AlterTable
-ALTER TABLE "public"."projects" ADD COLUMN     "teamConfigured" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "teamVersion" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "public"."projects" ADD COLUMN     "teamRequiredRoles" "public"."AgentRole"[] DEFAULT ARRAY[]::"public"."AgentRole"[];
 
 -- CreateTable
 CREATE TABLE "public"."project_team_members" (
     "projectId" TEXT NOT NULL,
     "agentId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "project_team_members_pkey" PRIMARY KEY ("projectId","agentId")
 );

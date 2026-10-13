@@ -30,16 +30,22 @@ This is the **target design**, not a claim that the entire flow is implemented.
 Each task covers one bounded deliverable. Agents collaborate on ready work;
 only unmet dependencies make an individual task wait.
 
-CP-01A and CP-01B currently provide draft phase CRUD/order, task membership,
+CP-01A and CP-01B provide draft phase CRUD/order, task membership,
 editable project requirements and phase objectives, deliverables, acceptance
-criteria, required roles and validated phase dependencies. These controls do
-not activate phases or schedule agents. Versioned task/prompt/agent snapshots,
+criteria, required roles and validated phase dependencies. CP-01C adds guarded
+activation/reopening and DAG protections; CP-01D validates bounded active-phase
+planner tasks before materializing them. CP-02A adds opt-in project teams,
+required role coverage and a project team editor using existing agents and
+configuration references. Configured teams select only eligible roster members;
+roles do not grant permissions. These planning controls do not start scheduling.
+Versioned task/prompt/agent snapshots,
 parallel scheduling, safe execution-time edits and evidence-based phase gates
 remain planned.
 
 See the [phase-based delivery plan](.loop/plan-phase-agent-delivery.md),
 [CP-01A evidence](.loop/cp-01a-evidence.md) and
-[CP-01B evidence](.loop/cp-01b-evidence.md) for scope and verification details.
+[CP-01B evidence](.loop/cp-01b-evidence.md) and
+[CP-02A evidence](.loop/cp-02a-evidence.md) for scope and verification details.
 
 ---
 

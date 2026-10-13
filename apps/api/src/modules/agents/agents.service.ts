@@ -19,21 +19,8 @@ export class AgentsService {
     }
   }
 
-  private redactProvider<
-    T extends {
-      provider: {
-        encryptedCredential: string | null;
-        credentialIv: string | null;
-        credentialAuthTag: string | null;
-      };
-    },
-  >(agent: T) {
-    const {
-      encryptedCredential,
-      credentialIv: _iv,
-      credentialAuthTag: _tag,
-      ...provider
-    } = agent.provider;
+  private redactProvider<T extends { provider: { encryptedCredential: string | null; credentialIv: string | null; credentialAuthTag: string | null } }>(agent: T) {
+    const { encryptedCredential, credentialIv: _iv, credentialAuthTag: _tag, ...provider } = agent.provider;
     return { ...agent, provider: { ...provider, hasCredential: Boolean(encryptedCredential) } };
   }
 
@@ -100,6 +87,7 @@ export class AgentsService {
         timeoutMs: true,
         maxRetries: true,
         permissionLevel: true,
+        allowedCommands: true,
         createdAt: true,
         updatedAt: true,
         provider: {
@@ -150,10 +138,7 @@ export class AgentsService {
     });
     if (!provider) throw AppError.notFound('AgentProvider', dto.providerKey);
     if (dto.projectId) {
-      const project = await this.prisma.project.findFirst({
-        where: { id: dto.projectId, organizationId },
-        select: { id: true },
-      });
+      const project = await this.prisma.project.findFirst({ where: { id: dto.projectId, organizationId }, select: { id: true } });
       if (!project) throw AppError.notFound('Project', dto.projectId);
     }
 

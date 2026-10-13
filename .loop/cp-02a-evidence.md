@@ -1,102 +1,133 @@
-# CP-02A — Explicit project teams and phase role coverage
+# CP-02A — Explicit project teams and required role coverage
 
-Date: 2026-10-08. Base: `59b8ee6`. Branch: `codex/cp02a-team-coverage`.
-Status: implemented, independently reviewed and verified.
+Date: 2026-10-13
+Status: implementation and local regression gates delivered; browser acceptance
+and independent review remain open. No publication or deployment is claimed.
 
-## Implemented behavior
+## Baseline and scope
 
-Projects can configure an explicit roster of up to 100 unique existing agents,
-including multiple agents for the same role. Agent roles, budgets, permissions
-and AgentConfiguration remain the existing domain; roster membership grants no
-organization administration or execution permissions.
+The checkout began clean, detached at `59b8ee6`, the merge of PR #10. The current
+plan includes CP-01C phase lifecycle and CP-01D bounded active-phase planning.
+Work is on `codex/cp02a-team-membership`. There were no unrelated tracked or
+untracked edits to preserve at the start; the patch contains only this slice.
 
-- `GET /api/projects/:projectId/team` returns configured state, team version,
-  safe member summaries, eligibility and per-role coverage.
-- `PUT /api/projects/:projectId/team` replaces the entire roster using
-  `{ expectedVersion, agentIds }`. Only organization owners/admins may write.
-- `GET /api/projects/:projectId/phases/:phaseId/role-coverage` reports required
-  role coverage and missing roles for that project's phase.
+An earlier unpublished CP-02A commit (`593673b`) was verified locally and used
+to retain its opt-in roster selection contract, deterministic worker selection,
+legacy team view scoping and associated regression coverage. This continuation
+adds project/phase requirements, configuration references, idle edit protection,
+the project team UI and HTTP/schema/frontend coverage on the merged baseline.
 
-Shared strict Zod validation caps and deduplicates IDs. Replacement locks the
-tenant-scoped project with FOR NO KEY UPDATE, checks the expected version,
-validates same-organization enabled agents scoped globally or to this project,
-and requires enabled same-organization providers. Membership, configured state,
-version and audit commit together. Audit failure rolls everything back. An
-unchanged roster with the current expected version is a no-op; stale versions
-return CONFLICT. Reads hide malformed foreign membership metadata and omit
-credential fields, prompts and arbitrary configuration values.
+## Domain and API contract
 
-Configured projects resolve a valid preferred member from roleAssignments,
-otherwise the lowest-ID eligible project member, then organization member.
-The worker never falls back outside the roster or to a default provider for an
-uncovered role. Its PROJECT_TEAM_ROLE_UNCOVERED error prevents agent invocation.
-The existing Agent Team endpoint uses the same configured selection ordering,
-checks project tenant scope and excludes disabled agents/providers. Unconfigured
-worker resolution retains its legacy behavior.
+`ProjectTeamMember` links projects to existing Agent records; its composite
+primary key prevents duplicate membership and both foreign keys cascade on
+deletion. Multiple members may share a role. No duplicate agent/configuration
+model, new enum, provider credential or inferred permission is introduced.
 
-## Additive migration
+Two additive migrations add membership, empty project required roles,
+`teamConfigured=false` and `teamVersion=0`. Existing agents, configurations,
+phase requirements, assignments, tasks and run history remain unchanged.
+Migrations were generated with `pnpm db:migrate` and deployed only to the
+task-owned scratch database. The applied datamodel snapshot matches the schema.
 
-`20261008105857_cp02a_project_team` adds Project.teamConfigured default false,
-Project.teamVersion default zero, and ProjectTeamMember with a composite primary
-key, reverse agent index and cascading project/agent foreign keys. It does not
-change domain enums or existing agent configurations. Existing projects keep
-legacy selection until explicitly configured.
+- `GET /projects/:projectId/team` returns explicit member IDs, eligible project
+  and organization candidates, active AgentConfiguration ID/version references,
+  project required/covered/missing roles and phase coverage. Phase requirements
+  combine project required roles with the existing phase required roles.
+- `PUT /projects/:projectId/team` requires `{ expectedVersion, memberIds,
+  requiredRoles }` through the strict shared schema. Only organization owners
+  and administrators may replace a team. Role names grant no authority.
+- A stale edit returns `CONFLICT` with the current team version. A changed team
+  atomically replaces members, requirements, opt-in status/version and audit.
+  A matching configured no-op does not increment its version or audit again.
+- Foreign tenant/project agents, disabled agents and disabled/foreign providers
+  cannot be selected. Invalid writes and audit failures do not partially apply.
+- Active phases, active task states, pending/running/waiting workflows and
+  pending/running agent runs prevent team edits with `PHASE_LOCKED`.
+  Project/task locks serialize phase changes and workflow starts; shared
+  agent/provider row locks make eligibility checks wait for concurrent edits.
+- Coverage is current configuration information, not acceptance or run evidence.
+  An incomplete draft team may be saved and displays its missing roles.
 
-The migration was generated with `pnpm db:migrate cp02a_project_team` and applied
-only to `engloop_cp02a_9665` on the task-owned local PostgreSQL container.
-The final empty-database forward proof uses `engloop_cp02a_9665_forward_final`.
-It applies prior migrations, inserts legacy project configuration, agents,
-providers, an ACTIVE phase, IMPLEMENTING task and RUNNING workflow, then applies
-the new migration. All existing values/history survive, new fields use defaults,
-and membership duplicate/FK constraints reject invalid inserts. Scratch databases
-are preserved; no deployment or seed data was changed.
+## Selection and UI
 
-## Review and verification
+Unconfigured projects retain legacy provider resolution. Configured projects
+only select enabled, same-organization agents/providers within their explicit
+roster and project scope. Existing preferred assignments are honored only when
+eligible roster members. Fallback member choice is deterministic. An uncovered
+requested role fails with `PROJECT_TEAM_ROLE_UNCOVERED`; an empty configured
+team does not silently fall back to the default provider.
 
-Planner, implementer, independent reviewer, verifier and lead participated.
-Independent final source review and final test refinement review found zero
-critical/high findings. Lead inspected the diff and generated SQL.
+The legacy `/agents/team` shape stays compatible and now applies tenant,
+eligibility and configured-roster filters. Team edits do not alter Agent budgets,
+commands, permission levels, prompts or AgentConfiguration values.
 
-- API PostgreSQL integration: 5 passed, exit 0. Tenant/project isolation,
-  manager authorization, invalid members, same-role multiplicity, safe responses,
-  provider disablement, coverage, idempotence, stale/concurrent writes and audit
-  rollback are covered. The final typed-spy rerun also passed 5/5, zero skips,
-  exit 0 after the build's last Prisma generation completed.
-- Worker PostgreSQL selection: 2 passed, exit 0. Outside preferences, deterministic
-  members, valid preferences, disabled agents/providers, missing roles, explicit
-  empty rosters and legacy compatibility are covered.
-- Expanded forward migration proof: 1 passed, exit 0, zero skips.
-- Shared schema suite: 51 passed, exit 0, including 2 roster validation tests.
-- Initial worker unit suite: 150 passed, exit 0, with 9 optional prior-phase
-  integration cases skipped; the new team PostgreSQL cases passed separately.
-- Final root lint and typecheck passed, exit 0. Root `pnpm test` passed,
-  exit 0: 690 tests passed, with 52 optional database tests skipped. CP-02A's
-  7 PostgreSQL cases and expanded forward proof ran separately with zero skips.
-  Production `pnpm build` passed, exit 0, including all 33 Next pages. The
-  pre-existing Next workspace-root/multiple-lockfile warning remains informational.
-  Final `git diff --check` passed, exit 0.
+The project detail page includes membership/requirements editing and project/
+phase coverage with loading, empty, error, retry, locked and read-only states.
+Disabled members can be removed but cannot be newly selected. Failed saves
+preserve draft selections; pending saves disable inputs. The editor keeps its
+original version after refetches, preventing stale edits from overwriting another
+administrator's changes. TanStack Query owns server state, with invalidation
+after phase, team, agent and provider edits plus a polling fallback.
 
-Validation uses bundled Node 24.19.0 and pinned pnpm 10.28.0. Initial typecheck
-setup lacked DATABASE_URL; subsequent generation uses the explicit scratch URL.
-A rollback test's invalid partial AuditService cast was replaced by a real
-instance with a typed Vitest spy. A PostgreSQL assertion was corrected to the
-documented enum coverage order. An independent retry raced Prisma generation
-and failed before collection; final retries are serialized after build. No
-production behavior or check requirements were weakened for these corrections.
+No credentials, provider configuration contents, prompts or permission fields
+appear in the new team payload. Saving activates roster selection for future
+invocations but starts no workflow or provider process.
 
-## Remaining scope and Git handoff
+## Verification
 
-Coverage is advisory; it does not activate, accept or schedule a phase. Roster
-and agent settings are resolved at invocation time until CP-02C adds immutable
-execution snapshots. This slice does not make existing runs reproducible after
-configuration edits. Prompt templates/revisions are next in CP-02B; editors
-remain CP-02D, scheduling CP-03 and evidence-gated acceptance CP-06. P1/P2 live
-runtime and GitHub delivery prerequisites remain open.
+Final root lint and typecheck passed with exit code 0. Root tests passed with
+exit code 0: 736 passed, 45 optional tests skipped. The team API and worker
+PostgreSQL suites ran within that root suite; optional historical DB/forward
+suites remain opt-in. The new forward proof passed separately (1 test).
+Production build passed with exit code 0 and generated all 33 pages. The existing
+Next workspace-root warning remains informational. `git diff --check` passed.
+Focused API, worker, schema, UI and forward-migration checks passed during
+implementation. The existing phase CRUD/planning/lifecycle PostgreSQL integration
+suites passed alongside the team API tests, preserving merged CP-01C behavior.
+The final compatibility rerun passed 26 phase CRUD/planning/lifecycle tests.
 
-No frontend code changed. Browser E2E and live provider execution were not run;
-PostgreSQL tests exercise actual roster storage and worker selection. The existing
-web unit suite and production build passed as part of the root gates. Changes
-are committed locally on `codex/cp02a-team-coverage`, with a clean worktree;
-nothing was pushed/deployed. The task-owned PostgreSQL container is stopped
-after checks, preserving the scratch databases. Docker Desktop and unrelated
-containers are left alone.
+The forward proof on a fresh empty database preserves existing agents,
+configurations, ACTIVE phase, IMPLEMENTING task and RUNNING workflow while
+adding empty/default team fields. Duplicate and nonexistent member references
+are rejected by database constraints. The proof refuses nonempty databases.
+
+The six-viewport Playwright scenario is present in
+`apps/web/e2e/project-team.spec.ts`; `playwright test ... --list` discovers all six
+viewports. It covers membership/requirements, missing coverage, disabled
+selection, saved payload/permissions, activation/reopening locks, clearing and
+375px overflow. **It has not been executed.** Automatic approval review rejected
+both local web-server startup commands with only `blocked by policy`; no browser
+success, screenshot or visual QA is claimed.
+
+Lead static review checked authorization, transaction/lock ordering, credential
+projection, legacy selection, schema/UI version bindings and scoped diffs.
+Independent review remains required by the delivery plan and is not claimed.
+
+## Environment and remaining work
+
+Only task-created `engloop-cp02a-postgres` (57433) and `engloop-cp02a-redis`
+(57380) containers were used. Scratch DBs `engloop_cp02a`,
+`engloop_cp02a_forward`, `engloop_cp02a_version_forward` and `engloop_cp02a_ui`
+are retained. Only the dedicated UI database was seeded; no existing user DB was
+reset. API ran locally for setup and was stopped; no worker/provider invocation
+was started. Task containers are stopped after checks. No remote server was used.
+
+The checkout initially needed its pinned dependencies installed. Migration
+generation initially failed before the scratch database became available;
+schema validation/build succeeded and generation/deployment passed after local
+setup. One simultaneous test/build rerun timed out in unchanged GitHub helper
+tests; final gates run sequentially with unchanged timeouts.
+The UI test URL initially carried into an existing API-client unit test, which
+expects a relative URL. Clearing that variable for tests fixed the environment;
+it is exported only for the production browser build. No test was weakened.
+
+CP-02B prompt templates/revisions, CP-02C immutable execution snapshots and
+CP-02D complete prompt/task/agent editors and execution preview remain open.
+The existing agent edit routes remain unchanged except team-view selection;
+reproducibility after configuration edits is not claimed. Concurrent scheduler
+leases and evidence-based phase acceptance remain CP-03 and CP-06.
+
+Changes are committed locally on `codex/cp02a-team-membership`; no push or PR
+creation is included. CP-02A remains unchecked pending browser acceptance and
+independent review, even though implementation and local non-browser gates pass.

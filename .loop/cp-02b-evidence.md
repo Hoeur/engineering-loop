@@ -2,6 +2,9 @@
 
 Date: 2026-10-13. Base: `3bb7ec7` (CP-02A restored from `593673b`).
 Branch: `codex/cp02b-prompt-revisions`.
+The original implementation record below is historical. PR #12 reconciliation
+with newer `main` is recorded in the final section and supersedes the original
+team-migration choice.
 Status: implemented; final verification/publication recorded below. Independent
 review remains open; this record does not claim independent review completion.
 
@@ -106,3 +109,52 @@ No browser E2E/live provider invocation was needed for this backend configuratio
 slice; no UI or worker invocation behavior changed. Final source review is the
 lead review described above; independent review remains open. Changes are
 committed locally on the continuation branch; nothing was pushed/deployed.
+
+## PR #12 reconciliation with main
+
+The PR conflicted with `origin/main` at `6e5eba2` (PR #11). Main contained a newer
+CP-02A implementation than the locally restored `3bb7ec7`. The merge preserves
+main's team API/services/tests, frontend editor/query integration, required roles,
+membership timestamps, shared response types and worker selection behavior.
+Team-related runtime/UI files match main exactly. CP-02B adds only prompt
+configuration, its schema/migration/tests and the prompt module registration.
+
+Removed the branch-only `20261008105857_cp02a_project_team` migration and its
+superseded plan. Keeping it alongside main's `20261013075525_add_project_team`
+and `20261013081037_add_team_version` would attempt to create membership tables
+and configuration columns twice. Main's published migration files are unchanged;
+CP-02B's migration remains additive after them. The earlier local scratch
+databases retain their original history; no reset, deployed migration rewrite
+or application database alteration was performed.
+
+Merged datamodels retain main's `teamRequiredRoles`, `teamConfigured`,
+`teamVersion`, membership `createdAt` and one `teamMemberships` relation, plus
+the two prompt models. The schema and applied-datamodel snapshot match.
+Both prompt and team services/controllers are registered once. Delivery notes
+preserve main's pending team browser/independent-review gates and CP-02B's
+pending independent review.
+
+Validation uses fresh task-owned `engloop_pr12_de11` and
+`engloop_pr12_de11_forward`. The complete reconciled migration chain applies
+from empty successfully. Expanded prompt forward proof preserves configured
+team roles/version/member rows, agent/provider rows and existing project/task
+values before/after applying the prompt migration. The forward proof passed,
+zero skips. Lead reviewed every resolved hunk against main and the migration
+chain; independent feature review remains open.
+
+Reconciled gates: root `corepack pnpm lint`, `typecheck` and `build` passed,
+exit 0 (33 Next pages). Final root `corepack pnpm test` passed, exit 0:
+754 passed, 46 optional database skips. All prompt (7), team API integration
+and HTTP, worker team selection, shared schema and frontend unit cases ran.
+The expanded PostgreSQL forward proof passed separately, zero skips, before
+the final rerun; its populated database was preserved and the one-use proof
+variable was unset for that rerun. The initial full run had one collection
+failure while a concurrent build regenerated Prisma's client; the final suite
+ran after build completed and had no failures. No product code or test
+expectation was weakened to resolve that execution race.
+
+There are no unresolved merge entries or conflict markers. The main-owned
+team/agent/UI/worker files and published team migration files compare equal
+to `6e5eba2`. `git diff --cached --check` passes. Conflict resolution is recorded
+in a merge commit and pushed to PR #12's existing branch; the feature's
+independent-review and browser-acceptance limitations remain as documented.

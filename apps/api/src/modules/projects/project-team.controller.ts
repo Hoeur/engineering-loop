@@ -8,19 +8,21 @@ import { zodPipe } from '../../common/pipes/zod-validation.pipe';
 import { ProjectTeamService } from './project-team.service';
 
 @ApiTags('projects')
-@Controller('projects/:projectId')
+@Controller('projects/:projectId/team')
 export class ProjectTeamController {
   constructor(private readonly teams: ProjectTeamService) {}
 
-  @Get('team')
-  @ApiOperation({ summary: 'Read the explicit project team and eligible role coverage' })
+  @Get()
+  @ApiOperation({ summary: 'Read explicit project team membership and required role coverage' })
   @ApiEnvelopeResponse(200)
   read(@CurrentUser('organizationId') org: string, @Param('projectId') project: string) {
     return this.teams.read(org, project);
   }
 
-  @Put('team')
-  @ApiOperation({ summary: 'Replace project team membership using its expected version' })
+  @Put()
+  @ApiOperation({
+    summary: 'Replace idle project team membership without changing agent permissions',
+  })
   @ApiZodBody(replaceProjectTeamSchema)
   @ApiEnvelopeResponse(200)
   replace(
@@ -30,16 +32,5 @@ export class ProjectTeamController {
     @Body(zodPipe(replaceProjectTeamSchema)) body: ReplaceProjectTeamDto,
   ) {
     return this.teams.replace(org, role, project, body);
-  }
-
-  @Get('phases/:phaseId/role-coverage')
-  @ApiOperation({ summary: 'Read explicit team coverage of the phase required roles' })
-  @ApiEnvelopeResponse(200)
-  coverage(
-    @CurrentUser('organizationId') org: string,
-    @Param('projectId') project: string,
-    @Param('phaseId') phase: string,
-  ) {
-    return this.teams.roleCoverage(org, project, phase);
   }
 }

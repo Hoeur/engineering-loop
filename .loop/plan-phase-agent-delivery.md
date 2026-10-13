@@ -6,7 +6,8 @@ protections implemented and reviewed. Current checkout gate evidence is in
 [graph evidence](cp-01c-evidence.md) and
 [lifecycle evidence](cp-01c-lifecycle-evidence.md). CP-01D bounded active-phase
 planning is implemented and reviewed; see [planner evidence](cp-01d-evidence.md).
-CP-02A explicit project team membership and role coverage is implemented; see
+CP-02A team membership, role coverage and the project editor are implemented;
+browser acceptance and independent review remain open. See
 [team evidence](cp-02a-evidence.md). CP-02B prompt templates/revisions and contract
 validation are implemented; see [prompt evidence](cp-02b-evidence.md). Independent
 CP-02B review remains open; CP-02C execution snapshots are the next implementation slice.
@@ -89,13 +90,13 @@ forward migration tests pass; no existing data is deleted.
 
 Dependencies: CP-01.
 
-- [x] CP-02A: Reuse Agent/AgentConfiguration; define team membership and required
+- [ ] CP-02A: Reuse Agent/AgentConfiguration; define team membership and required
   role coverage without assuming role names imply permissions.
-  Explicit project rosters support multiple agents per role, versioned atomic
-  replacement and phase coverage. Configured teams select eligible members only;
-  uncovered roles fail closed. Legacy projects retain provider resolution.
-  UI editors and immutable execution snapshots remain CP-02D and CP-02C.
-  See [team evidence](cp-02a-evidence.md).
+  Implementation adds opt-in explicit project rosters, versioned replacement,
+  project/phase coverage, tenant/provider eligibility checks, deterministic worker
+  selection and a responsive project editor. Missing configured roles fail closed;
+  unconfigured projects keep legacy selection. The checkbox remains open for
+  browser acceptance and independent review. See [team evidence](cp-02a-evidence.md).
 - [~] CP-02B: Add prompt templates/revisions with supported variables, input context
   and output contracts. Reject unresolved variables and invalid outputs.
   Implemented tenant-scoped append-only revisions, bounded literal substitution,
