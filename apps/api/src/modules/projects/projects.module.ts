@@ -10,6 +10,8 @@ import { ProjectContractService } from './project-contract.service';
 import { ProjectPhaseDependenciesService } from './project-phase-dependencies.service';
 import { ProjectTeamController } from './project-team.controller';
 import { ProjectTeamService } from './project-team.service';
+import { ProjectPromptsController } from './project-prompts.controller';
+import { ProjectPromptsService } from './project-prompts.service';
 
 @Module({
   imports: [TasksModule],
@@ -18,6 +20,7 @@ import { ProjectTeamService } from './project-team.service';
     ProjectPhasesController,
     ProjectContractController,
     ProjectTeamController,
+    ProjectPromptsController,
   ],
   providers: [
     ProjectsService,
@@ -26,6 +29,7 @@ import { ProjectTeamService } from './project-team.service';
     ProjectContractService,
     ProjectPhaseDependenciesService,
     ProjectTeamService,
+    ProjectPromptsService,
   ],
   exports: [ProjectsService],
 })

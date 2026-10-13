@@ -4,3 +4,4 @@ export * from './api';
 export * from './validation';
 export * from './project-phases';
 export * from './project-team';
+export * from './prompt-templates';

@@ -8,7 +8,9 @@ protections implemented and reviewed. Current checkout gate evidence is in
 planning is implemented and reviewed; see [planner evidence](cp-01d-evidence.md).
 CP-02A team membership, role coverage and the project editor are implemented;
 browser acceptance and independent review remain open. See
-[team evidence](cp-02a-evidence.md). CP-02B prompt revisions are the next implementation slice.
+[team evidence](cp-02a-evidence.md). CP-02B prompt templates/revisions and contract
+validation are implemented; see [prompt evidence](cp-02b-evidence.md). Independent
+CP-02B review remains open; CP-02C execution snapshots are the next implementation slice.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -95,8 +97,12 @@ Dependencies: CP-01.
   selection and a responsive project editor. Missing configured roles fail closed;
   unconfigured projects keep legacy selection. The checkbox remains open for
   browser acceptance and independent review. See [team evidence](cp-02a-evidence.md).
-- [ ] CP-02B: Add prompt templates/revisions with supported variables, input context
+- [~] CP-02B: Add prompt templates/revisions with supported variables, input context
   and output contracts. Reject unresolved variables and invalid outputs.
+  Implemented tenant-scoped append-only revisions, bounded literal substitution,
+  task/project/phase preview and validation against existing role output contracts.
+  Source review and automated gates are recorded in [prompt evidence](cp-02b-evidence.md);
+  independent review remains open. Execution binding remains CP-02C and UI CP-02D.
 - [ ] CP-02C: Snapshot task, prompt, effective agent/provider settings, budgets,
   permissions and artifact revisions atomically before enqueuing an execution.
 - [ ] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
