@@ -350,6 +350,7 @@ export const useUpdateAgent = () => {
       unwrap(api.patch<AgentSummary>(`/agents/${id}`, body)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['agents'] });
+      void queryClient.invalidateQueries({ queryKey: ['project-team'] });
     },
   });
 };
@@ -397,6 +398,7 @@ export const useUpsertProvider = () => {
       )),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.providers });
+      void queryClient.invalidateQueries({ queryKey: ['project-team'] });
     },
   });
 };

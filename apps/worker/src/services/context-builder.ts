@@ -134,6 +134,7 @@ export class ContextBuilder {
       where: { id: projectId },
       select: {
         roleAssignments: true,
+        teamConfigured: true,
         organizationId: true,
         organization: { select: { defaultProviderKey: true } },
       },
@@ -141,12 +142,14 @@ export class ContextBuilder {
 
     const assignments = (project.roleAssignments ?? {}) as Record<string, string>;
     const assignedId = assignments[role];
+    const membership = project.teamConfigured ? { teamMemberships: { some: { projectId } } } : {};
 
     const agent =
       (assignedId
         ? await this.prisma.agent.findFirst({
             where: {
               id: assignedId,
+              ...membership,
               organizationId: project.organizationId,
               role,
               enabled: true,
@@ -159,22 +162,26 @@ export class ContextBuilder {
       (await this.prisma.agent.findFirst({
         where: {
           organizationId: project.organizationId,
+          ...membership,
           role,
           enabled: true,
           projectId,
           provider: { organizationId: project.organizationId, enabled: true },
         },
         include: { provider: true },
+        ...(project.teamConfigured ? { orderBy: { id: 'asc' as const } } : {}),
       })) ??
       (await this.prisma.agent.findFirst({
         where: {
           organizationId: project.organizationId,
+          ...membership,
           role,
           enabled: true,
           projectId: null,
           provider: { organizationId: project.organizationId, enabled: true },
         },
         include: { provider: true },
+        ...(project.teamConfigured ? { orderBy: { id: 'asc' as const } } : {}),
       }));
 
     if (agent?.provider.enabled) {
@@ -187,6 +194,10 @@ export class ContextBuilder {
         agentMaxTokens: agent.maxTokens,
         agentMaxCostUsd: decimalToNumber(agent.maxCostUsd),
       };
+    }
+
+    if (project.teamConfigured) {
+      throw new Error(`PROJECT_TEAM_ROLE_UNCOVERED: No eligible project team member for ${role}`);
     }
 
     return {

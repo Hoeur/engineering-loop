@@ -11,6 +11,7 @@ import { TaskBoard } from '@/components/task/task-board';
 import { NewTaskDialog } from '@/components/task/new-task-dialog';
 import { ProjectPhases } from '@/components/projects/project-phases';
 import { ProjectContract } from '@/components/projects/project-contract';
+import { ProjectTeam } from '@/components/projects/project-team';
 import { MetricCard } from '@/components/common/metric-card';
 import { formatCost, relativeTime, titleCase } from '@/lib/format';
 import { useBoard, useProject } from '@/lib/queries';
@@ -111,6 +112,7 @@ export default function ProjectDetailPage(): React.JSX.Element {
 
           <ProjectContract projectId={data.id} />
           <ProjectPhases projectId={data.id} />
+          <ProjectTeam projectId={data.id} />
           <h2 className="mb-3 mt-6 text-sm font-semibold">Board</h2>
           <QueryBoundary
             query={board}

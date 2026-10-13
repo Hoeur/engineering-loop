@@ -4,3 +4,4 @@ export * from './api';
 export * from './events';
 export * from './primitives';
 export * from './project-phases';
+export * from './project-team';
