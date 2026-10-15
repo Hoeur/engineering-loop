@@ -12,7 +12,10 @@ browser acceptance and independent review remain open. See
 validation are implemented; see [prompt evidence](cp-02b-evidence.md). Independent
 CP-02B review remains open. CP-02C opt-in configuration snapshots and worker
 binding are implemented; exact Git/artifact replay remains open. See
-[snapshot evidence](cp-02c-evidence.md). CP-02D editors/preview are still pending.
+[snapshot evidence](cp-02c-evidence.md). CP-02D project prompt editing/history and
+task-bound text preview are implemented; full execution selection/settings
+preview remains pending. See [editor plan](cp-02d-plan.md) and
+[editor evidence](cp-02d-evidence.md).
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -113,7 +116,11 @@ Dependencies: CP-01.
   Additive migration and PostgreSQL proof are in [snapshot evidence](cp-02c-evidence.md).
   Artifact IDs/hashes are captured; full immutable Git/artifact replay and a
   historical executable output-contract registry remain open.
-- [ ] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
+- [~] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
+      Project prompt create/append/history and saved-revision task text preview
+      extend existing phase/task/agent/team surfaces. Full execution revision
+      selection and effective-settings preview remain open, along with independent
+      review and live API-backed browser acceptance. See [editor evidence](cp-02d-evidence.md).
       Permissions can only narrow the caller/project policy; secrets are never previewed.
 
 Acceptance: add/edit each configuration surface; an old run remains reproducible
