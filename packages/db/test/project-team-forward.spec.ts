@@ -64,7 +64,15 @@ describe.runIf(Boolean(databaseUrl))(
         for (const table of tables)
           before.set(table, (await client.query(`SELECT * FROM ${table}`)).rows);
         const project = (await client.query('SELECT * FROM projects')).rows;
-        for (const name of names.filter((name) => name >= migration))
+        // Apply only the team migrations: later ones (e.g. CP-02C execution snapshots)
+        // add columns to these tables and are proven by their own forward suites.
+        const teamMigrations = names.filter(
+          (name) =>
+            name >= migration &&
+            (name.endsWith('_add_project_team') || name.endsWith('_add_team_version')),
+        );
+        expect(teamMigrations).toHaveLength(2);
+        for (const name of teamMigrations)
           await client.query(await readFile(resolve(root, name, 'migration.sql'), 'utf8'));
         for (const table of tables)
           expect((await client.query(`SELECT * FROM ${table}`)).rows).toEqual(before.get(table));

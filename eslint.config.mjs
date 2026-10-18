@@ -18,6 +18,11 @@ export default tseslint.config(
       'workspace/**',
       // The worker clones the repositories agents work on here (WORKSPACE_ROOT=./workspace).
       'apps/*/workspace/**',
+      // Nested agent checkouts and local scratch (all gitignored) are other trees, not this source.
+      '.claude/worktrees/**',
+      '.tmp/**',
+      '.verify-tmp/**',
+      'Claude outputs/**',
     ],
   },
   js.configs.recommended,
