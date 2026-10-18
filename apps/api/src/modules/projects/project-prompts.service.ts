@@ -2,16 +2,13 @@ import { Injectable } from '@nestjs/common';
 import {
   createPromptTemplateSchema,
   revisePromptTemplateSchema,
+  promptContext,
   renderPrompt,
   promptRoleSchema,
   validatePromptOutput,
   PROMPT_VARIABLES,
 } from '@engloop/schemas';
-import type {
-  CreatePromptTemplateDto,
-  RevisePromptTemplateDto,
-  PromptVariable,
-} from '@engloop/schemas';
+import type { CreatePromptTemplateDto, RevisePromptTemplateDto } from '@engloop/schemas';
 import { ApiErrorCode, AuditAction, OrgRole } from '@engloop/types';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppError } from '../../common/errors/app-error';
@@ -154,16 +151,12 @@ export class ProjectPromptsService {
       },
     });
     if (!task) throw AppError.notFound('Task', taskId);
-    const context: Partial<Record<PromptVariable, string>> = {
-      'task.title': task.title,
-      'task.description': task.description,
-      'task.objective': task.objective,
-      'task.acceptanceCriteria': JSON.stringify(task.acceptanceCriteria),
-      'project.name': task.project.name,
-      'project.objective': task.project.contractObjective ?? '',
+    const context = promptContext({
+      task,
+      project: task.project,
+      phase: task.phase,
       role: prompt.template.role,
-      ...(task.phase ? { 'phase.objective': task.phase.objective ?? '' } : {}),
-    };
+    });
     try {
       return {
         templateId,

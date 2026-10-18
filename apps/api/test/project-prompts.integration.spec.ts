@@ -280,4 +280,19 @@ describe.runIf(Boolean(databaseUrl))('Project prompts PostgreSQL integration', (
     ).toBe(1);
     expect(await prisma.promptRevision.count({ where: { templateId: template.id } })).toBe(1);
   });
+
+  it('refuses in-place revision edits in the database, while template deletes still cascade', async () => {
+    const template = await create();
+    await expect(
+      prisma.promptRevision.updateMany({
+        where: { templateId: template.id, revision: 1 },
+        data: { body: 'Tampered {{task.title}}' },
+      }),
+    ).rejects.toThrow(/immutable/u);
+    expect((await service.read(org, project, template.id, 1)).body).toBe(
+      '{{task.title}} / {{project.name}}',
+    );
+    await prisma.promptTemplate.delete({ where: { id: template.id } });
+    expect(await prisma.promptRevision.count({ where: { templateId: template.id } })).toBe(0);
+  });
 });
