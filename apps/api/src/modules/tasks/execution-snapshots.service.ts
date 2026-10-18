@@ -11,6 +11,7 @@ import {
 import {
   plannerPhaseContextSchema,
   executionSelectionSchema,
+  promptContext,
   renderPrompt,
   workflowExecutionSnapshotSchema,
   type ExecutionSelection,
@@ -242,16 +243,10 @@ export class ExecutionSnapshotsService {
             templateId: promptSelection.templateId,
             revision: promptSelection.revision,
             body: revision.body,
-            rendered: renderPrompt(revision.body, {
-              'task.title': task.title,
-              'task.description': task.description,
-              'task.objective': task.objective,
-              'task.acceptanceCriteria': JSON.stringify(task.acceptanceCriteria),
-              'project.name': project.name,
-              'project.objective': project.contractObjective ?? '',
-              role,
-              ...(phaseContext ? { 'phase.objective': phaseContext.objective ?? '' } : {}),
-            }),
+            rendered: renderPrompt(
+              revision.body,
+              promptContext({ task, project, phase: phaseContext, role }),
+            ),
           };
         } catch (error) {
           throw AppError.validation(

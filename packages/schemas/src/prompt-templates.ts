@@ -85,7 +85,11 @@ export function renderPrompt(
 ): string {
   promptBodySchema.parse(body);
   for (const name of promptVariables(body)) {
-    if (typeof context[name] !== 'string') throw new Error(`Unresolved prompt variable: ${name}`);
+    // A blank value is as unresolved as a missing one: rendering it would hand the
+    // agent a prompt with a hole where the operator expected content.
+    const value = context[name];
+    if (typeof value !== 'string' || value.trim() === '')
+      throw new Error(`Unresolved prompt variable: ${name}`);
   }
   // Substituted values stay literal; placeholders in task text are never recursively expanded.
   const rendered = body.replace(
@@ -94,6 +98,46 @@ export function renderPrompt(
   );
   if (rendered.length > 100000) throw new Error('Rendered prompt exceeds 100000 characters');
   return rendered;
+}
+
+/**
+ * Render context from stored task/project/phase values. Missing, blank and empty
+ * list values are left out, so a template that uses them fails as unresolved
+ * instead of silently rendering an empty string.
+ */
+export function promptContext(input: {
+  task: {
+    title: string;
+    description?: string | null;
+    objective?: string | null;
+    acceptanceCriteria?: readonly string[];
+  };
+  project: { name: string; contractObjective?: string | null };
+  phase?: { objective?: string | null } | null;
+  role: string;
+}): Partial<Record<PromptVariable, string>> {
+  const { task, project, phase, role } = input;
+  const entries: [PromptVariable, string | null | undefined][] = [
+    ['task.title', task.title],
+    ['task.description', task.description],
+    ['task.objective', task.objective],
+    [
+      'task.acceptanceCriteria',
+      task.acceptanceCriteria && task.acceptanceCriteria.length > 0
+        ? JSON.stringify(task.acceptanceCriteria)
+        : null,
+    ],
+    ['project.name', project.name],
+    ['project.objective', project.contractObjective],
+    ['phase.objective', phase?.objective],
+    ['role', role],
+  ];
+  return Object.fromEntries(
+    entries.filter(
+      (entry): entry is [PromptVariable, string] =>
+        typeof entry[1] === 'string' && entry[1].trim() !== '',
+    ),
+  );
 }
 
 export function validatePromptOutput(role: PromptRole, output: unknown) {

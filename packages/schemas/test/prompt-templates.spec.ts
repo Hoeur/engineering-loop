@@ -3,6 +3,7 @@ import {
   createPromptTemplateSchema,
   revisePromptTemplateSchema,
   promptVariables,
+  promptContext,
   renderPrompt,
   validatePromptOutput,
   promptRevisionNumberSchema,
@@ -62,6 +63,36 @@ describe('Prompt templates', () => {
     expect(() => renderPrompt('{{task.title}}', { 'task.title': 'x'.repeat(100001) })).toThrow(
       'exceeds',
     );
+  });
+  it('treats blank values as unresolved', () => {
+    expect(() => renderPrompt('{{task.description}}', { 'task.description': '' })).toThrow(
+      'Unresolved prompt variable: task.description',
+    );
+    expect(() => renderPrompt('{{project.objective}}', { 'project.objective': '  ' })).toThrow(
+      'Unresolved',
+    );
+  });
+  it('builds render context without empty values', () => {
+    expect(
+      promptContext({
+        task: { title: 'Cart', description: '', objective: null, acceptanceCriteria: [] },
+        project: { name: 'Shop', contractObjective: null },
+        phase: { objective: '  ' },
+        role: 'IMPLEMENTER',
+      }),
+    ).toEqual({ 'task.title': 'Cart', 'project.name': 'Shop', role: 'IMPLEMENTER' });
+    expect(
+      promptContext({
+        task: { title: 'Cart', acceptanceCriteria: ['Adds tax'] },
+        project: { name: 'Shop', contractObjective: 'Sell' },
+        phase: { objective: 'Checkout' },
+        role: 'PLANNER',
+      }),
+    ).toMatchObject({
+      'task.acceptanceCriteria': '["Adds tax"]',
+      'project.objective': 'Sell',
+      'phase.objective': 'Checkout',
+    });
   });
   it('validates the existing role contract, rejecting incorrect and oversized output', () => {
     expect(validatePromptOutput('DOCUMENTATION', { summary: 'Docs', documents: [] })).toMatchObject(

@@ -152,6 +152,16 @@ describe('ExecutionSnapshotsService', () => {
       rendered: 'Implement title IMPLEMENTER',
     });
   });
+  it.each(['{{project.objective}}', '{{task.objective}}', '{{task.acceptanceCriteria}}'])(
+    'rejects %s when the stored value is missing, blank or empty instead of rendering a hole',
+    async (body) => {
+      const { capture, tx } = fixture();
+      tx.promptRevision.findFirst.mockResolvedValue({ body });
+      await expect(
+        capture([{ role: 'IMPLEMENTER', templateId: 'template-1', revision: 1 }]),
+      ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    },
+  );
   it('pins built-in process default model when provider default is absent', async () => {
     const { capture, provider } = fixture();
     provider.kind = 'CODEX';
