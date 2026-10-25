@@ -6,11 +6,18 @@ import { TaskTransitionService } from './task-transition.service';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 import { TaskDependenciesService } from './task-dependencies.service';
+import { ExecutionPreviewController } from './execution-preview.controller';
+import { ExecutionPreviewService } from './execution-preview.service';
 
 @Module({
   imports: [TestsModule, ReviewsModule, AgentRunsModule],
-  controllers: [TasksController],
-  providers: [TasksService, TaskTransitionService, TaskDependenciesService],
+  controllers: [TasksController, ExecutionPreviewController],
+  providers: [
+    TasksService,
+    TaskTransitionService,
+    TaskDependenciesService,
+    ExecutionPreviewService,
+  ],
   exports: [TasksService, TaskTransitionService],
 })
 export class TasksModule {}

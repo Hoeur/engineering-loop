@@ -12,7 +12,12 @@ browser acceptance and independent review remain open. See
 validation are implemented; see [prompt evidence](cp-02b-evidence.md). Independent
 CP-02B review remains open. CP-02C opt-in configuration snapshots and worker
 binding are implemented; exact Git/artifact replay remains open. See
-[snapshot evidence](cp-02c-evidence.md). CP-02D editors/preview are still pending.
+[snapshot evidence](cp-02c-evidence.md). CP-02D project prompt editing/history and
+task-bound text preview are implemented. Task plan/run now select exact prompt
+revisions and preview safe configuration ceilings before opting into snapshots.
+See [editor plan](cp-02d-plan.md), [editor evidence](cp-02d-evidence.md) and
+[execution preview evidence](cp-02d-execution-evidence.md). Output-contract UI and
+independent/live acceptance remain open.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -113,8 +118,14 @@ Dependencies: CP-01.
   Additive migration and PostgreSQL proof are in [snapshot evidence](cp-02c-evidence.md).
   Artifact IDs/hashes are captured; full immutable Git/artifact replay and a
   historical executable output-contract registry remain open.
-- [ ] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
-      Permissions can only narrow the caller/project policy; secrets are never previewed.
+- [~] CP-02D: Build phase/task/agent/prompt/team editors and execution preview.
+  Project prompt create/append/history and saved-revision task text preview
+  extend existing phase/task/agent/team surfaces. Exact execution revision
+  selection and safe configuration preview now extend task plan/run actions.
+  Output-contract validation, independent review and live API-backed browser
+  acceptance remain open. See [editor evidence](cp-02d-evidence.md) and
+  [execution evidence](cp-02d-execution-evidence.md).
+  Permissions can only narrow the caller/project policy; secrets are never previewed.
 
 Acceptance: add/edit each configuration surface; an old run remains reproducible
 after edits; disabled or unauthorized agents cannot be selected; credentials never
