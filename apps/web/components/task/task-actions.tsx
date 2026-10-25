@@ -18,12 +18,14 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { useTaskAction } from '@/lib/queries';
 import type { TaskDetail } from '@/lib/types';
 import { ApiError } from '@/lib/api-client';
+import { TaskExecutionDialog } from './task-execution-dialog';
 
 interface PendingAction {
   action: string;
   title: string;
   description: string;
-  body?: unknown;
+  body?: Record<string, unknown>;
+  executionMode?: 'plan' | 'run';
   destructive?: boolean;
   confirmLabel: string;
 }
@@ -51,11 +53,12 @@ export const TaskActions = ({ task }: { task: TaskDetail }): React.JSX.Element =
     task.status === TaskStatus.NEEDS_HUMAN_REVIEW ||
     task.status === TaskStatus.TEST_FAILED;
 
-  const run = async (input: PendingAction): Promise<void> => {
+  const run = async (input: PendingAction): Promise<boolean> => {
     setError(null);
     try {
       await mutation.mutateAsync({ action: input.action, body: input.body });
       router.refresh();
+      return true;
     } catch (cause) {
       setError(
         cause instanceof ApiError
@@ -64,6 +67,7 @@ export const TaskActions = ({ task }: { task: TaskDetail }): React.JSX.Element =
             ? cause.message
             : 'Action failed',
       );
+      return false;
     }
   };
 
@@ -96,6 +100,7 @@ export const TaskActions = ({ task }: { task: TaskDetail }): React.JSX.Element =
         {canPlan &&
           button('plan', 'Plan', Sparkles, {
             action: 'plan',
+            executionMode: 'plan',
             title: `Run the planner on ${task.key}?`,
             description:
               'The planner inspects the repository and produces an implementation plan with acceptance criteria. No code is modified.',
@@ -110,6 +115,7 @@ export const TaskActions = ({ task }: { task: TaskDetail }): React.JSX.Element =
             Play,
             {
               action: 'run',
+              executionMode: 'run',
               title: `Start the engineering loop for ${task.key}?`,
               description:
                 'The full workflow runs: worktree, implementation, deterministic checks, review, and a pull request if the project permission allows it.',
@@ -196,17 +202,35 @@ export const TaskActions = ({ task }: { task: TaskDetail }): React.JSX.Element =
         </p>
       ) : null}
 
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title={pending?.title ?? ''}
-        description={pending?.description}
-        confirmLabel={pending?.confirmLabel ?? 'Confirm'}
-        destructive={pending?.destructive}
-        onConfirm={async () => {
-          if (pending) await run(pending);
-        }}
-      />
+      {pending?.executionMode ? (
+        <TaskExecutionDialog
+          key={`${task.id}:${pending.executionMode}`}
+          taskId={task.id}
+          projectId={task.projectId}
+          mode={pending.executionMode}
+          skipPlanning={pending.body?.skipPlanning === true}
+          close={() => setPending(null)}
+          error={error}
+          start={(selection) =>
+            run({
+              ...pending,
+              body: { ...pending.body, ...(selection ? { execution: selection } : {}) },
+            })
+          }
+        />
+      ) : (
+        <ConfirmDialog
+          open={pending !== null}
+          onOpenChange={(open) => !open && setPending(null)}
+          title={pending?.title ?? ''}
+          description={pending?.description}
+          confirmLabel={pending?.confirmLabel ?? 'Confirm'}
+          destructive={pending?.destructive}
+          onConfirm={async () => {
+            if (pending) await run(pending);
+          }}
+        />
+      )}
     </div>
   );
 };

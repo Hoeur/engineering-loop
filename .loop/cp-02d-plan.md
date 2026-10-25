@@ -27,10 +27,14 @@ review. Record any unavailable independent or live acceptance separately.
 
 ## Follow-up slices
 
-- Execution selection on task plan/run: select exact compatible role revisions,
-  opt into CP-02C snapshots and show safe effective execution settings before
+- Implemented 2026-10-25: execution selection on task plan/run selects exact compatible role revisions,
+  opts into CP-02C snapshots and shows safe execution configuration before
   explicit submission. The existing prompt preview endpoint only renders text;
-  it is not an execution-settings preview or execution authorization.
+  it is not an execution-settings preview or execution authorization. The new
+  task execution-preview endpoint reuses CP-02C capture without writes and
+  returns an allowlisted browser projection. Start recaptures configuration;
+  this preview does not reserve budgets or pin settings between preview and start.
+  See [execution evidence](cp-02d-execution-evidence.md).
 - Output-contract validation UI using the existing validate-output endpoint.
 - Remaining phase/task/agent editor gaps, independent review and real API-backed
   browser acceptance. Do not close CP-02D from the first UI slice.

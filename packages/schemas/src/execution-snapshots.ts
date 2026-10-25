@@ -36,6 +36,18 @@ export const executionSelectionSchema = z
   });
 export type ExecutionSelection = z.infer<typeof executionSelectionSchema>;
 
+export const executionPreviewRequestSchema = z
+  .object({
+    mode: z.enum(['plan', 'run']),
+    skipPlanning: z.boolean().default(false),
+    execution: executionSelectionSchema.default({}),
+  })
+  .strict()
+  .refine((input) => input.mode !== 'plan' || !input.skipPlanning, {
+    message: 'Planning cannot skip the planner',
+  });
+export type ExecutionPreviewRequest = z.infer<typeof executionPreviewRequestSchema>;
+
 export const executionRoleSnapshotSchema = z
   .object({
     role: zAgentRole,
@@ -71,6 +83,27 @@ export const executionRoleSnapshotSchema = z
   })
   .strict();
 export type ExecutionRoleSnapshot = z.infer<typeof executionRoleSnapshotSchema>;
+
+// Keep browser previews independent from secret-bearing configuration and invocation context.
+export const executionPreviewSchema = z.object({
+  capturedAt: z.string().datetime(),
+  taskId: cuidLike,
+  roles: z.array(
+    executionRoleSnapshotSchema
+      .pick({
+        role: true,
+        agentId: true,
+        providerKey: true,
+        providerKind: true,
+        model: true,
+        permissionLevel: true,
+        budget: true,
+        prompt: true,
+      })
+      .strip(),
+  ),
+});
+export type ExecutionPreview = z.infer<typeof executionPreviewSchema>;
 
 export const workflowExecutionSnapshotSchema = z
   .object({

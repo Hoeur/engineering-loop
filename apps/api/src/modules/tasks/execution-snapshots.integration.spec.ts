@@ -8,6 +8,7 @@ import type { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ExecutionSnapshotsService } from './execution-snapshots.service';
 import { TasksService } from './tasks.service';
+import { ExecutionPreviewService } from './execution-preview.service';
 
 const databaseUrl = process.env.ENGLOOP_SNAPSHOT_TEST_DATABASE_URL;
 describe.runIf(Boolean(databaseUrl))('Workflow execution snapshot PostgreSQL contract', () => {
@@ -131,6 +132,35 @@ describe.runIf(Boolean(databaseUrl))('Workflow execution snapshot PostgreSQL con
       await prisma.organization.delete({ where: { id: org } });
       await prisma.$disconnect();
     }
+  });
+
+  it('previews tenant-scoped settings without starting or persisting workflow state', async () => {
+    const previews = new ExecutionPreviewService(
+      prisma as PrismaService,
+      new ExecutionSnapshotsService(env),
+    );
+    const before = await prisma.workflowRun.count({ where: { taskId: task } });
+    const result = await previews.preview(org, task, {
+      mode: 'run',
+      skipPlanning: true,
+      execution: { prompts: [{ role: AgentRole.IMPLEMENTER, templateId: template, revision: 1 }] },
+    });
+    expect(result.roles[0]).toMatchObject({
+      model: 'pinned-model',
+      prompt: { revision: 1 },
+      budget: { allowedCommands: ['git'], maxCostUsd: 2 },
+    });
+    expect(result.roles[0]).not.toHaveProperty('systemPrompt');
+    expect(JSON.stringify(result)).not.toContain('NEVER_CAPTURE');
+    expect(await prisma.workflowRun.count({ where: { taskId: task } })).toBe(before);
+    expect(start).not.toHaveBeenCalled();
+    await expect(
+      previews.preview('other-org', task, {
+        mode: 'plan',
+        skipPlanning: false,
+        execution: { prompts: [] },
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('captures narrowed policy, prompt revision and safe inputs atomically before queue dispatch', async () => {

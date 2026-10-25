@@ -118,7 +118,7 @@ export default function TaskDetailPage(): React.JSX.Element {
             </div>
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <div className="space-y-4 lg:col-span-2">
+              <div className="min-w-0 space-y-4 lg:col-span-2">
                 <Card>
                   <CardHeader>
                     <CardTitle>Requirement</CardTitle>
@@ -479,7 +479,7 @@ export default function TaskDetailPage(): React.JSX.Element {
                 </Card>
               </div>
 
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4">
                 <Card>
                   <CardHeader>
                     <CardTitle>Overview</CardTitle>
