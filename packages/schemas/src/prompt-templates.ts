@@ -78,6 +78,10 @@ export type RevisePromptTemplateDto = z.infer<typeof revisePromptTemplateSchema>
 export const previewPromptSchema = z.object({ taskId: cuidLike }).strict();
 export const promptRevisionNumberSchema = z.coerce.number().int().positive().max(2147483647);
 export const validatePromptOutputSchema = z.object({ output: z.unknown() }).strict();
+export const PROMPT_OUTPUT_MAX_CHARS = 200000;
+export const promptOutputIssuesSchema = z
+  .array(z.object({ path: z.array(z.string()), message: z.string() }))
+  .max(20);
 
 export function renderPrompt(
   body: string,
@@ -142,7 +146,15 @@ export function promptContext(input: {
 
 export function validatePromptOutput(role: PromptRole, output: unknown) {
   const encoded = JSON.stringify(output);
-  if (!encoded || encoded.length > 200000)
-    throw new Error('Output must be JSON of at most 200000 characters');
+  if (!encoded || encoded.length > PROMPT_OUTPUT_MAX_CHARS)
+    throw new Error(`Output must be JSON of at most ${PROMPT_OUTPUT_MAX_CHARS} characters`);
   return ROLE_OUTPUT_SCHEMAS[role].parse(output);
+}
+
+export function promptOutputValidationIssues(error: unknown) {
+  // Inspect errors alongside the schemas that created them, avoiding ESM/CJS constructor mismatches.
+  if (!(error instanceof z.ZodError)) return undefined;
+  return error.issues
+    .slice(0, 20)
+    .map(({ path, message }) => ({ path: path.map(String), message }));
 }

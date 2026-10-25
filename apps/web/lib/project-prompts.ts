@@ -6,6 +6,7 @@ import type {
   ProjectPromptTemplate,
   ProjectPromptRevision,
   ProjectPromptPreview,
+  ProjectPromptOutputValidation,
 } from '@engloop/types';
 import { api } from './api-client';
 
@@ -32,6 +33,18 @@ export const promptService = {
       await api.post<ProjectPromptPreview>(
         `${revisionPath(projectId, templateId, revision)}/preview`,
         { taskId },
+      )
+    ).data,
+  validateOutput: async (
+    projectId: string,
+    templateId: string,
+    revision: number,
+    output: unknown,
+  ) =>
+    (
+      await api.post<ProjectPromptOutputValidation>(
+        `${revisionPath(projectId, templateId, revision)}/validate-output`,
+        { output },
       )
     ).data,
 };
@@ -73,3 +86,9 @@ export const usePreviewPrompt = (
   taskId: string,
 ) =>
   useMutation({ mutationFn: () => promptService.preview(projectId, templateId, revision, taskId) });
+
+export const useValidatePromptOutput = (projectId: string, templateId: string, revision: number) =>
+  useMutation({
+    mutationFn: (output: unknown) =>
+      promptService.validateOutput(projectId, templateId, revision, output),
+  });

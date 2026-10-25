@@ -15,6 +15,7 @@ describe('Prompt API routes', () => {
       body: 'Revised',
     });
     await promptService.preview('project/one', 'template/one', 2, 'task-one');
+    await promptService.validateOutput('project/one', 'template/one', 1, { summary: 'Docs' });
     expect(mocks.get).toHaveBeenCalledWith('/projects/project%2Fone/prompts');
     expect(mocks.get).toHaveBeenCalledWith(
       '/projects/project%2Fone/prompts/template%2Fone/revisions/4',
@@ -28,5 +29,9 @@ describe('Prompt API routes', () => {
       { taskId: 'task-one' },
     );
     expect(promptsKey('one')).not.toEqual(promptsKey('two'));
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/projects/project%2Fone/prompts/template%2Fone/revisions/1/validate-output',
+      { output: { summary: 'Docs' } },
+    );
   });
 });

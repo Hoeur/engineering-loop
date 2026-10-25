@@ -14,6 +14,7 @@ import {
 } from '@/lib/project-prompts';
 import { PromptForm } from './prompt-form';
 import { PromptPreview } from './prompt-preview';
+import { PromptOutputValidation } from './prompt-output-validation';
 
 function PromptDetail({
   projectId,
@@ -102,6 +103,13 @@ function PromptDetail({
               projectId={projectId}
               templateId={template.id}
               revision={revision}
+            />
+            <PromptOutputValidation
+              key={`output:${projectId}:${template.id}:${revision}`}
+              projectId={projectId}
+              templateId={template.id}
+              revision={revision}
+              role={template.role}
             />
           </>
         )}

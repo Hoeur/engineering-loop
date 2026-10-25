@@ -35,7 +35,10 @@ review. Record any unavailable independent or live acceptance separately.
   returns an allowlisted browser projection. Start recaptures configuration;
   this preview does not reserve budgets or pin settings between preview and start.
   See [execution evidence](cp-02d-execution-evidence.md).
-- Output-contract validation UI using the existing validate-output endpoint.
+- Implemented 2026-10-25: output-contract validation UI using the existing
+  validate-output endpoint, including local JSON checks, bounded server field
+  errors and exact saved-revision binding. See [output plan](cp-02d-output-plan.md)
+  and [output evidence](cp-02d-output-evidence.md).
 - Remaining phase/task/agent editor gaps, independent review and real API-backed
   browser acceptance. Do not close CP-02D from the first UI slice.
 

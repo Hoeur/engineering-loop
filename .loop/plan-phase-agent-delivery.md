@@ -16,8 +16,10 @@ binding are implemented; exact Git/artifact replay remains open. See
 task-bound text preview are implemented. Task plan/run now select exact prompt
 revisions and preview safe configuration ceilings before opting into snapshots.
 See [editor plan](cp-02d-plan.md), [editor evidence](cp-02d-evidence.md) and
-[execution preview evidence](cp-02d-execution-evidence.md). Output-contract UI and
-independent/live acceptance remain open.
+[execution preview evidence](cp-02d-execution-evidence.md). Saved-revision output
+validation UI is implemented and verified through the real API at six viewports;
+see [output evidence](cp-02d-output-evidence.md). Remaining editor gaps,
+independent review and broader live acceptance remain open.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -122,9 +124,11 @@ Dependencies: CP-01.
   Project prompt create/append/history and saved-revision task text preview
   extend existing phase/task/agent/team surfaces. Exact execution revision
   selection and safe configuration preview now extend task plan/run actions.
-  Output-contract validation, independent review and live API-backed browser
-  acceptance remain open. See [editor evidence](cp-02d-evidence.md) and
-  [execution evidence](cp-02d-execution-evidence.md).
+  Saved-revision JSON output validation now includes bounded field errors and
+  real API-backed browser coverage. Remaining editor gaps, independent review
+  and broader live acceptance remain open. See [editor evidence](cp-02d-evidence.md),
+  [execution evidence](cp-02d-execution-evidence.md) and
+  [output evidence](cp-02d-output-evidence.md).
   Permissions can only narrow the caller/project policy; secrets are never previewed.
 
 Acceptance: add/edit each configuration surface; an old run remains reproducible

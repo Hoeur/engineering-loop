@@ -6,6 +6,7 @@ import {
   renderPrompt,
   promptRoleSchema,
   validatePromptOutput,
+  promptOutputValidationIssues,
   PROMPT_VARIABLES,
 } from '@engloop/schemas';
 import type { CreatePromptTemplateDto, RevisePromptTemplateDto } from '@engloop/schemas';
@@ -182,8 +183,12 @@ export class ProjectPromptsService {
     try {
       validatePromptOutput(promptRoleSchema.parse(prompt.template.role), output);
       return { valid: true, templateId, revision, role: prompt.template.role };
-    } catch {
-      throw AppError.validation('Output does not satisfy the prompt role contract');
+    } catch (error) {
+      const issues = promptOutputValidationIssues(error);
+      throw AppError.validation(
+        'Output does not satisfy the prompt role contract',
+        issues ? { issues } : undefined,
+      );
     }
   }
 }
