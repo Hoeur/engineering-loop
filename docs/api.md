@@ -64,6 +64,21 @@ Every response carries `x-request-id` and `x-trace-id`; supply your own
 | PATCH       | `/repositories/:id`                  |
 | POST        | `/repositories/:id/credentials`      |
 
+### Saved prompt output validation
+
+`POST /projects/:projectId/prompts/:templateId/revisions/:revision/validate-output`
+accepts `{ "output": <JSON value> }` and checks the exact saved prompt revision's
+role against the current application output schema. Access is scoped to the
+authenticated organization. It does not invoke an agent or accept work.
+
+HTTP 201 returns `{ valid: true, templateId, revision, role }` in the success
+envelope. Contract failures retain HTTP 422 and `VALIDATION_FAILED`, with optional
+`error.details.issues` containing at most 20 `{ path: string[], message: string }`
+entries. Array offsets are string path segments, for example
+`["documents", "0", "path"]`. Non-schema failures may omit issue details.
+Serialized output is bounded to 200,000 characters; other HTTP request limits
+still apply. This endpoint does not provide historical executable schema replay.
+
 ### Work breakdown
 
 | Method     | Path                          |

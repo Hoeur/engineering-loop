@@ -137,6 +137,20 @@ describe.runIf(Boolean(databaseUrl))('Project prompts PostgreSQL integration', (
       .send({ output: {} })
       .expect(422);
     expect(invalid.body).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(invalid.body.error.details.issues).toEqual([{ path: ['summary'], message: 'Required' }]);
+    const nested = await request(app.getHttpServer())
+      .post(`${base}/${id}/revisions/1/validate-output`)
+      .send({ output: { summary: 'Docs', documents: [{}] } })
+      .expect(422);
+    expect(nested.body.error.details.issues).toContainEqual({
+      path: ['documents', '0', 'path'],
+      message: 'Required',
+    });
+    expect(
+      nested.body.error.details.issues.every((issue: Record<string, unknown>) =>
+        Object.keys(issue).every((key) => ['path', 'message'].includes(key)),
+      ),
+    ).toBe(true);
   });
 
   it('rejects invalid HTTP variables and revision parameters with the shared validation envelope', async () => {

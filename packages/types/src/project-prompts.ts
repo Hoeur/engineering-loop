@@ -25,3 +25,10 @@ export interface ProjectPromptPreview {
   body: string;
   supportedVariables: string[];
 }
+
+export interface ProjectPromptOutputValidation {
+  valid: true;
+  templateId: string;
+  revision: number;
+  role: AgentRole;
+}

@@ -140,6 +140,32 @@ describe('Project prompts', () => {
     expect(screen.queryByRole('button', { name: 'Edit as new revision' })).not.toBeInTheDocument();
   });
 
+  it('allows a reader to validate saved output and discards responses from another revision', async () => {
+    mocks.role = OrgRole.MEMBER;
+    let finish: (value: unknown) => void = () => {};
+    mocks.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mount();
+    await open();
+    fireEvent.change(screen.getByLabelText('Output JSON'), { target: { value: '{}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Validate output' }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith(
+        '/projects/project-one/prompts/prompt-one/revisions/2/validate-output',
+        { output: {} },
+      ),
+    );
+    fireEvent.change(screen.getByLabelText(/Revision \(latest/), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'View revision' }));
+    await screen.findByText('Viewing saved revision 1. New revisions preserve this text.');
+    await act(async () => finish({ data: { valid: true, revision: 2, role: AgentRole.PLANNER } }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Output JSON')).toHaveValue('');
+  });
+
   it('keeps members read-only while allowing saved preview and ignores late results for another task', async () => {
     mocks.role = OrgRole.MEMBER;
     let finish: (value: unknown) => void = () => {};

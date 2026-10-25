@@ -6,10 +6,30 @@ import {
   promptContext,
   renderPrompt,
   validatePromptOutput,
+  promptOutputValidationIssues,
   promptRevisionNumberSchema,
 } from '../src/prompt-templates';
 
 describe('Prompt templates', () => {
+  it('bounds contract errors to field paths and messages without copying the submitted output', () => {
+    try {
+      validatePromptOutput('DOCUMENTATION', {
+        summary: 'Docs',
+        documents: Array.from({ length: 30 }, () => ({})),
+      });
+      throw new Error('Expected invalid documentation output');
+    } catch (error) {
+      const issues = promptOutputValidationIssues(error);
+      expect(issues).toHaveLength(20);
+      expect(issues?.[0]).toEqual({ path: ['documents', '0', 'path'], message: 'Required' });
+      expect(
+        issues?.every((issue) =>
+          Object.keys(issue).every((key) => ['path', 'message'].includes(key)),
+        ),
+      ).toBe(true);
+    }
+    expect(promptOutputValidationIssues(new Error('Output too large'))).toBeUndefined();
+  });
   it('bounds revision route parameters to positive database integers', () => {
     expect(promptRevisionNumberSchema.parse('2')).toBe(2);
     for (const value of ['0', '-1', '1.5', '2147483648', 'NaN'])
