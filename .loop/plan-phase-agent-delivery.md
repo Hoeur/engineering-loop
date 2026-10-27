@@ -18,8 +18,10 @@ revisions and preview safe configuration ceilings before opting into snapshots.
 See [editor plan](cp-02d-plan.md), [editor evidence](cp-02d-evidence.md) and
 [execution preview evidence](cp-02d-execution-evidence.md). Saved-revision output
 validation UI is implemented and verified through the real API at six viewports;
-see [output evidence](cp-02d-output-evidence.md). Remaining editor gaps,
-independent review and broader live acceptance remain open.
+see [output evidence](cp-02d-output-evidence.md). The 2026-10-27 continuation adds
+guarded task requirements editing and general agent creation/settings; see
+[editor evidence](cp-02d-editors-evidence.md). Relationship selection controls,
+independent review and broader execution acceptance remain open.
 Scope: project requirements → editable phases → bounded tasks → parallel role
 collaboration → recorded evidence → accepted phase → next dependent phase.
 
@@ -125,8 +127,10 @@ Dependencies: CP-01.
   extend existing phase/task/agent/team surfaces. Exact execution revision
   selection and safe configuration preview now extend task plan/run actions.
   Saved-revision JSON output validation now includes bounded field errors and
-  real API-backed browser coverage. Remaining editor gaps, independent review
-  and broader live acceptance remain open. See [editor evidence](cp-02d-evidence.md),
+  real API-backed browser coverage. Guarded task requirements and general agent
+  creation/settings are implemented by the [editor continuation](cp-02d-editors-evidence.md).
+  Relationship selectors, independent review and broader execution acceptance
+  remain open. See [editor evidence](cp-02d-evidence.md),
   [execution evidence](cp-02d-execution-evidence.md) and
   [output evidence](cp-02d-output-evidence.md).
   Permissions can only narrow the caller/project policy; secrets are never previewed.

@@ -152,3 +152,46 @@ still apply. This endpoint does not provide historical executable schema replay.
 In development `AUTH_DEV_BYPASS=true` resolves the seeded founder automatically,
 so the dashboard works immediately after `pnpm db:seed`. The bypass refuses to
 activate when `NODE_ENV=production`.
+
+## Configuration editor contracts
+
+`PATCH /tasks/:id` requires the exact `updatedAt` string returned by `GET /tasks/:id`:
+
+```json
+{ "expectedUpdatedAt": "2026-10-27T00:00:00.000Z", "title": "Revised planning task" }
+```
+
+Success is HTTP 200 in the normal envelope, containing the updated task. A stale
+baseline returns HTTP 409 `CONFLICT`. Only idle planning tasks in BACKLOG,
+PLAN_READY, BLOCKED or FAILED can change; active workflows/agents, executed
+evidence, planned children and accepted phases return HTTP 409 `TASK_EDIT_LOCKED`.
+Use follow-up work for changed executed requirements. Current plan projections
+are cleared; historical runs and snapshots are preserved. Status, phase and
+parent-task changes are not accepted here. Foreign tasks return HTTP 404
+`NOT_FOUND`; malformed or empty edits return HTTP 422 `VALIDATION_FAILED`.
+
+`POST /agents` and `PATCH /agents/:id` require authenticated OWNER or ADMIN
+membership. The server derives organization ownership from the authenticated
+user. Creation accepts the existing shared agent schema; provider must be
+enabled and optional project scope must belong to the organization. Creation
+returns HTTP 201; updates return HTTP 200, both in the normal envelope.
+
+General agent edits require `expectedUpdatedAt` from `GET /agents/:id`:
+
+```json
+{ "expectedUpdatedAt": "2026-10-27T00:00:00.000Z", "model": "configured-model" }
+```
+
+The administrator-only `GET /agents/:id/editor` returns the settings needed by
+the editor and the same version, excluding configuration JSON and run contents.
+
+Stale edits and changes to role/provider/model/prompt/permission/commands during
+applicable active work return HTTP 409 `CONFLICT`. Existing limit-only updates
+and explicit disable requests remain compatible without a timestamp. Re-enabling
+requires one. Scope changes and free-form configuration JSON updates are rejected
+with HTTP 422 rather than silently ignored. Empty model text restores provider
+default behavior; empty system-prompt text clears the override. Foreign agents
+return HTTP 404, non-administrators HTTP 403, and invalid/unavailable references
+HTTP 422 or 404. Writes and audits commit together. Provider credentials and
+configuration are excluded from editor responses; audits record changed field
+names rather than prompt/configuration contents.

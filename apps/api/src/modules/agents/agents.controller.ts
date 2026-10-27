@@ -47,6 +47,20 @@ export class AgentsController {
     return this.agents.findOne(organizationId, id);
   }
 
+  @Get(':id/editor')
+  @ApiOperation({
+    summary:
+      'Read administrator-editable agent settings without credentials, configuration JSON or run contents',
+  })
+  @ApiEnvelopeResponse(200)
+  editor(
+    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser('role') role: string,
+    @Param('id') id: string,
+  ) {
+    return this.agents.editor(organizationId, role, id);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create an agent' })
   @ApiZodBody(upsertAgentSchema)
@@ -60,7 +74,10 @@ export class AgentsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update an agent' })
+  @ApiOperation({
+    summary:
+      'Update an agent; expectedUpdatedAt detects stale editors and live work locks execution settings',
+  })
   @ApiZodBody(updateAgentSchema)
   @ApiEnvelopeResponse(200)
   update(

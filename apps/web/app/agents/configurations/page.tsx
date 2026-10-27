@@ -10,11 +10,11 @@ import { AgentBadge, ProviderBadge } from '@/components/common/badges';
 import { formatCost, formatDuration, formatTokens } from '@/lib/format';
 import { useAgents, useCurrentUser } from '@/lib/queries';
 import { AgentBudgetDialog } from '@/components/agents/agent-budget-dialog';
+import { AgentEditDialog } from '@/components/agents/agent-edit-dialog';
 import type { AgentSummary } from '@/lib/types';
 
 /** Mirrors the API's own gate, which is what actually enforces this. */
-const canManageAgents = (role: string | undefined): boolean =>
-  role === 'OWNER' || role === 'ADMIN';
+const canManageAgents = (role: string | undefined): boolean => role === 'OWNER' || role === 'ADMIN';
 
 export default function AgentConfigurationsPage(): React.JSX.Element {
   const agents = useAgents();
@@ -75,7 +75,12 @@ export default function AgentConfigurationsPage(): React.JSX.Element {
           {
             id: 'actions',
             header: '',
-            cell: (agent: AgentSummary) => <AgentBudgetDialog agent={agent} />,
+            cell: (agent: AgentSummary) => (
+              <div className="flex flex-wrap gap-2">
+                <AgentEditDialog agent={agent} />
+                <AgentBudgetDialog agent={agent} />
+              </div>
+            ),
           },
         ]
       : []),
@@ -85,6 +90,7 @@ export default function AgentConfigurationsPage(): React.JSX.Element {
     <>
       <PageHeader
         title="Configurations"
+        actions={<AgentEditDialog />}
         description="Per-agent execution limits: token budget, cost budget, timeout, retries, permission level and command allowlist. An agent's own limits bound its runs; unset ones fall back to the process defaults."
       />
 
@@ -97,7 +103,11 @@ export default function AgentConfigurationsPage(): React.JSX.Element {
           <EmptyState
             icon={Sliders}
             title="No agents configured"
-            description="Seed demo data or create agents through POST /api/agents."
+            description={
+              isAdmin
+                ? 'Create an agent to configure its role, provider and execution limits.'
+                : 'An organization owner or administrator can create agents.'
+            }
           />
         }
       >
