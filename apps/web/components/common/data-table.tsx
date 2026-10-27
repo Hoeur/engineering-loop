@@ -65,12 +65,13 @@ export const DataTable = <T,>({
 
     <div className={cn('grid gap-2 md:hidden', className)}>
       {rows.map((row) => {
+        const Card = onRowClick ? 'button' : 'div';
         const primary = columns.find((column) => column.primary) ?? columns[0];
         const rest = columns.filter((column) => column !== primary && !column.hideOnCard);
         return (
-          <button
+          <Card
             key={rowKey(row)}
-            type="button"
+            type={onRowClick ? 'button' : undefined}
             onClick={onRowClick ? () => onRowClick(row) : undefined}
             className={cn(
               'w-full rounded-lg border border-border bg-card p-3 text-left shadow-xs',
@@ -88,7 +89,7 @@ export const DataTable = <T,>({
                 </div>
               ))}
             </dl>
-          </button>
+          </Card>
         );
       })}
     </div>

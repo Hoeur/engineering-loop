@@ -70,7 +70,9 @@ export class TasksController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update task fields (status is not updatable here)' })
+  @ApiOperation({
+    summary: 'Edit idle planning inputs with expectedUpdatedAt; live or evidenced work is locked',
+  })
   @ApiZodBody(updateTaskSchema)
   @ApiEnvelopeResponse(200)
   update(

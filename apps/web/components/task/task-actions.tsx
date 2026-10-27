@@ -19,6 +19,7 @@ import { useTaskAction } from '@/lib/queries';
 import type { TaskDetail } from '@/lib/types';
 import { ApiError } from '@/lib/api-client';
 import { TaskExecutionDialog } from './task-execution-dialog';
+import { TaskEditDialog } from './task-edit-dialog';
 
 interface PendingAction {
   action: string;
@@ -97,6 +98,7 @@ export const TaskActions = ({ task }: { task: TaskDetail }): React.JSX.Element =
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
+        <TaskEditDialog key={task.id} task={task} />
         {canPlan &&
           button('plan', 'Plan', Sparkles, {
             action: 'plan',

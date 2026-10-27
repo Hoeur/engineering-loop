@@ -170,8 +170,13 @@ export const createTaskSchema = z.object({
 export type CreateTaskDto = z.infer<typeof createTaskSchema>;
 
 export const updateTaskSchema = createTaskSchema
-  .omit({ projectId: true, dependsOnTaskIds: true })
-  .partial();
+  .omit({ projectId: true, dependsOnTaskIds: true, parentTaskId: true })
+  .partial()
+  .extend({ expectedUpdatedAt: z.string().datetime() })
+  .strict()
+  .refine((value) => Object.keys(value).some((key) => key !== 'expectedUpdatedAt'), {
+    message: 'Provide at least one task field to update',
+  });
 export type UpdateTaskDto = z.infer<typeof updateTaskSchema>;
 
 /**
@@ -256,7 +261,33 @@ export const upsertAgentSchema = z.object({
 });
 export type UpsertAgentDto = z.infer<typeof upsertAgentSchema>;
 
-export const updateAgentSchema = upsertAgentSchema.partial().omit({ organizationId: true });
+export const agentEditNeedsVersion = (value: { enabled?: boolean }): boolean =>
+  value.enabled === true ||
+  Object.keys(value).some(
+    (key) =>
+      ![
+        'expectedUpdatedAt',
+        'maxTokens',
+        'maxCostUsd',
+        'timeoutMs',
+        'maxRetries',
+        'enabled',
+      ].includes(key),
+  );
+
+export const updateAgentSchema = upsertAgentSchema
+  .partial()
+  .omit({ organizationId: true, projectId: true, configuration: true })
+  .extend({ expectedUpdatedAt: z.string().datetime().optional() })
+  .strict()
+  .refine((value) => Object.keys(value).some((key) => key !== 'expectedUpdatedAt'), {
+    message: 'Provide at least one agent field to update',
+  })
+  .refine((value) => !agentEditNeedsVersion(value) || Boolean(value.expectedUpdatedAt), {
+    path: ['expectedUpdatedAt'],
+    message: 'Reload the agent and supply its updatedAt before changing settings',
+  });
+export type UpdateAgentDto = z.infer<typeof updateAgentSchema>;
 
 export const upsertAgentProviderSchema = z
   .object({

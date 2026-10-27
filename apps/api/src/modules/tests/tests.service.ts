@@ -29,29 +29,40 @@ export class TestsService {
     });
     if (!task) throw AppError.notFound('Task', taskId);
 
-    const selected =
-      checks.length > 0
-        ? checks
-        : task.requiredChecks.length > 0
-          ? task.requiredChecks
-          : (DEFAULT_REQUIRED_CHECKS as unknown as CheckType[]);
+    const { testRun, selected } = await this.prisma.$transaction(async (tx) => {
+      // Requirement edits and check creation must agree on one task revision.
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT t.id FROM tasks t JOIN projects p ON p.id = t."projectId"
+        WHERE t.id = ${taskId} AND p."organizationId" = ${organizationId} FOR UPDATE OF t
+      `;
+      if (rows.length !== 1) throw AppError.notFound('Task', taskId);
+      const task = await tx.task.findUniqueOrThrow({ where: { id: taskId } });
+      const selected =
+        checks.length > 0
+          ? checks
+          : task.requiredChecks.length > 0
+            ? task.requiredChecks
+            : (DEFAULT_REQUIRED_CHECKS as unknown as CheckType[]);
 
-    const testRun = await this.prisma.testRun.create({
-      data: {
-        taskId,
-        status: CheckStatus.QUEUED,
-        totalChecks: selected.length,
-        worktreePath: task.worktreePath,
-        results: {
-          create: selected.map((checkType) => ({
-            checkType,
-            name: checkType.toLowerCase(),
-            status: CheckStatus.QUEUED,
-            command: '(resolved at execution time from repository configuration)',
-          })),
+      const testRun = await tx.testRun.create({
+        data: {
+          taskId,
+          status: CheckStatus.QUEUED,
+          totalChecks: selected.length,
+          worktreePath: task.worktreePath,
+          results: {
+            create: selected.map((checkType) => ({
+              checkType,
+              name: checkType.toLowerCase(),
+              status: CheckStatus.QUEUED,
+              command: '(resolved at execution time from repository configuration)',
+            })),
+          },
         },
-      },
-      include: { results: true },
+        include: { results: true },
+      });
+
+      return { testRun, selected };
     });
 
     await this.queues.enqueue(

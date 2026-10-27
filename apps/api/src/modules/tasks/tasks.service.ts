@@ -49,6 +49,7 @@ import { TaskTransitionService } from './task-transition.service';
 import { AgentRunsService } from '../agent-runs/agent-runs.service';
 import { TaskDependenciesService } from './task-dependencies.service';
 import { ExecutionSnapshotsService } from './execution-snapshots.service';
+import { TaskEditingService } from './task-editing.service';
 
 const TASK_LIST_INCLUDE = {
   project: { select: { id: true, name: true, key: true, slug: true } },
@@ -446,35 +447,8 @@ export class TasksService {
   }
 
   async update(organizationId: string, id: string, dto: UpdateTaskDto): Promise<Task> {
-    const existing = await this.assertOwned(organizationId, id);
-    await this.validateTaskReferences(organizationId, existing.projectId, dto);
-    return this.prisma.task.update({
-      where: { id },
-      data: {
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.objective !== undefined ? { objective: dto.objective } : {}),
-        ...(dto.type !== undefined ? { type: dto.type } : {}),
-        ...(dto.priority !== undefined ? { priority: dto.priority } : {}),
-        ...(dto.riskLevel !== undefined ? { riskLevel: dto.riskLevel } : {}),
-        ...(dto.acceptanceCriteria !== undefined
-          ? { acceptanceCriteria: dto.acceptanceCriteria }
-          : {}),
-        ...(dto.implementationNotes !== undefined
-          ? { implementationNotes: dto.implementationNotes }
-          : {}),
-        ...(dto.suggestedFiles !== undefined ? { suggestedFiles: dto.suggestedFiles } : {}),
-        ...(dto.requiredChecks !== undefined
-          ? { requiredChecks: dto.requiredChecks as CheckType[] }
-          : {}),
-        ...(dto.maxAttempts !== undefined ? { maxAttempts: dto.maxAttempts } : {}),
-        ...(dto.repositoryId !== undefined ? { repositoryId: dto.repositoryId } : {}),
-        ...(dto.epicId !== undefined ? { epicId: dto.epicId } : {}),
-        ...(dto.featureId !== undefined ? { featureId: dto.featureId } : {}),
-        ...(dto.assignedAgentId !== undefined ? { assignedAgentId: dto.assignedAgentId } : {}),
-        lastActivityAt: new Date(),
-      },
-    });
+    await this.assertOwned(organizationId, id);
+    return new TaskEditingService(this.prisma, this.audit).update(organizationId, id, dto);
   }
 
   async transition(
@@ -862,7 +836,7 @@ export class TasksService {
         }),
       );
     }
-    if (dto.parentTaskId) {
+    if ('parentTaskId' in dto && dto.parentTaskId) {
       add(
         'parentTaskId',
         this.prisma.task.count({

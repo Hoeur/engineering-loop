@@ -32,7 +32,9 @@ describe('DataTable', () => {
     // The card layout is a sibling of the table wrapper, hidden from md up.
     const cardLayout = container.querySelector('.md\\:hidden');
     expect(cardLayout).not.toBeNull();
-    expect(cardLayout?.querySelectorAll('button')).toHaveLength(2);
+    expect(cardLayout?.children).toHaveLength(2);
+    expect(cardLayout?.textContent).toContain('ENG-101');
+    expect(cardLayout?.textContent).toContain('ENG-102');
   });
 
   it('keeps horizontal scrolling inside the table wrapper', () => {

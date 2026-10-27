@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { AgentRole, AuditAction, OrgRole } from '@engloop/types';
-import type { UpsertAgentDto } from '@engloop/schemas';
+import { AgentRole, OrgRole } from '@engloop/types';
+import type { UpdateAgentDto, UpsertAgentDto } from '@engloop/schemas';
 import type { Prisma } from '@engloop/db';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppError } from '../../common/errors/app-error';
 import { AuditService } from '../audit/audit.service';
+import { AgentEditingService } from './agent-editing.service';
 
 @Injectable()
 export class AgentsService {
@@ -19,8 +20,21 @@ export class AgentsService {
     }
   }
 
-  private redactProvider<T extends { provider: { encryptedCredential: string | null; credentialIv: string | null; credentialAuthTag: string | null } }>(agent: T) {
-    const { encryptedCredential, credentialIv: _iv, credentialAuthTag: _tag, ...provider } = agent.provider;
+  private redactProvider<
+    T extends {
+      provider: {
+        encryptedCredential: string | null;
+        credentialIv: string | null;
+        credentialAuthTag: string | null;
+      };
+    },
+  >(agent: T) {
+    const {
+      encryptedCredential,
+      credentialIv: _iv,
+      credentialAuthTag: _tag,
+      ...provider
+    } = agent.provider;
     return { ...agent, provider: { ...provider, hasCredential: Boolean(encryptedCredential) } };
   }
 
@@ -122,7 +136,20 @@ export class AgentsService {
     const agent = await this.prisma.agent.findFirst({
       where: { id, organizationId },
       include: {
-        provider: true,
+        provider: {
+          select: {
+            id: true,
+            key: true,
+            displayName: true,
+            kind: true,
+            enabled: true,
+            healthy: true,
+            defaultModel: true,
+            encryptedCredential: true,
+            credentialIv: true,
+            credentialAuthTag: true,
+          },
+        },
         configurations: { orderBy: { version: 'desc' } },
         runs: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
@@ -133,98 +160,18 @@ export class AgentsService {
 
   async create(organizationId: string, role: string, dto: UpsertAgentDto) {
     this.assertAdministrator(role);
-    const provider = await this.prisma.agentProvider.findUnique({
-      where: { organizationId_key: { organizationId, key: dto.providerKey } },
-    });
-    if (!provider) throw AppError.notFound('AgentProvider', dto.providerKey);
-    if (dto.projectId) {
-      const project = await this.prisma.project.findFirst({ where: { id: dto.projectId, organizationId }, select: { id: true } });
-      if (!project) throw AppError.notFound('Project', dto.projectId);
-    }
-
-    const agent = await this.prisma.agent.create({
-      data: {
-        organizationId,
-        projectId: dto.projectId ?? null,
-        providerId: provider.id,
-        name: dto.name,
-        role: dto.role,
-        model: dto.model ?? provider.defaultModel,
-        enabled: dto.enabled,
-        systemPrompt: dto.systemPrompt ?? null,
-        maxTokens: dto.maxTokens,
-        maxCostUsd: dto.maxCostUsd,
-        timeoutMs: dto.timeoutMs,
-        maxRetries: dto.maxRetries,
-        permissionLevel: dto.permissionLevel,
-        allowedCommands: dto.allowedCommands,
-        configurations: {
-          create: { version: 1, values: dto.configuration as Prisma.InputJsonValue, active: true },
-        },
-      },
-      include: { provider: true },
-    });
-
-    await this.audit.recordSafe({
-      organizationId,
-      projectId: dto.projectId ?? null,
-      action: AuditAction.CONFIGURATION_CHANGED,
-      entityType: 'agent',
-      entityId: agent.id,
-      summary: `Created agent ${agent.name} (${agent.role}) on ${provider.key}`,
-    });
-
-    return this.redactProvider(agent);
+    return new AgentEditingService(this.prisma, this.audit).create(organizationId, dto);
   }
 
-  async update(organizationId: string, role: string, id: string, dto: Partial<UpsertAgentDto>) {
+  async editor(organizationId: string, role: string, id: string) {
     this.assertAdministrator(role);
-    const existing = await this.prisma.agent.findFirst({ where: { id, organizationId } });
-    if (!existing) throw AppError.notFound('Agent', id);
-
-    let providerId = existing.providerId;
-    if (dto.providerKey) {
-      const provider = await this.prisma.agentProvider.findUnique({
-        where: {
-          organizationId_key: { organizationId: existing.organizationId, key: dto.providerKey },
-        },
-      });
-      if (!provider) throw AppError.notFound('AgentProvider', dto.providerKey);
-      providerId = provider.id;
-    }
-
-    const agent = await this.prisma.agent.update({
-      where: { id },
-      data: {
-        providerId,
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.role !== undefined ? { role: dto.role } : {}),
-        ...(dto.model !== undefined ? { model: dto.model } : {}),
-        ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
-        ...(dto.systemPrompt !== undefined ? { systemPrompt: dto.systemPrompt } : {}),
-        ...(dto.maxTokens !== undefined ? { maxTokens: dto.maxTokens } : {}),
-        ...(dto.maxCostUsd !== undefined ? { maxCostUsd: dto.maxCostUsd } : {}),
-        ...(dto.timeoutMs !== undefined ? { timeoutMs: dto.timeoutMs } : {}),
-        ...(dto.maxRetries !== undefined ? { maxRetries: dto.maxRetries } : {}),
-        ...(dto.permissionLevel !== undefined ? { permissionLevel: dto.permissionLevel } : {}),
-        ...(dto.allowedCommands !== undefined ? { allowedCommands: dto.allowedCommands } : {}),
-      },
-      include: { provider: true },
-    });
-
-    await this.audit.recordSafe({
-      organizationId: existing.organizationId,
-      projectId: existing.projectId,
-      action: AuditAction.CONFIGURATION_CHANGED,
-      entityType: 'agent',
-      entityId: id,
-      summary: `Updated agent ${agent.name}`,
-      metadata: { changes: dto as Record<string, unknown> },
-    });
-
-    return this.redactProvider(agent);
+    return new AgentEditingService(this.prisma, this.audit).read(organizationId, id);
   }
 
+  async update(organizationId: string, role: string, id: string, dto: UpdateAgentDto) {
+    this.assertAdministrator(role);
+    return new AgentEditingService(this.prisma, this.audit).update(organizationId, id, dto);
+  }
   /** Agent performance panel on the Insights screens (spec section 31). */
   async performance(organizationId: string) {
     const grouped = await this.prisma.agentRun.groupBy({
